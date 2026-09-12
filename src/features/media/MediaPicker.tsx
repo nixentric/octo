@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react'
 import { Folder, Upload } from 'lucide-react'
+import { useConfirm } from '@/components/confirm'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
 import type { FileEntry } from '@/core/types'
@@ -15,6 +16,7 @@ export function MediaPicker({ open, onClose, onPick }: { open: boolean; onClose:
   const [dir, setDir] = useState('')
   const { data, loading, refetch } = useFetch<MediaResponse>(open ? `/media?dir=${encodeURIComponent(dir)}` : null)
   const [busy, setBusy] = useState(false)
+  const confirm = useConfirm()
   const fileInput = useRef<HTMLInputElement>(null)
 
   const items = (data?.items ?? []).filter((i) => i.type === 'dir' || isImage(i.name))
@@ -30,7 +32,7 @@ export function MediaPicker({ open, onClose, onPick }: { open: boolean; onClose:
       onPick(r.url)
       onClose()
     } catch (e) {
-      alert((e as Error).message)
+      await confirm({ title: 'Upload failed', body: (e as Error).message, alert: true })
     } finally {
       setBusy(false)
       refetch()

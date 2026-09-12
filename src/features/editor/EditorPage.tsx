@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link, useBlocker, useNavigate, useParams } from 'react-router'
 import { ArrowLeft, Eye, History, Trash2 } from 'lucide-react'
+import { useConfirm } from '@/components/confirm'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -43,6 +44,7 @@ function defaults(fields: Field[]): Frontmatter {
 function Editor({ col, slugParam }: { col: Collection; slugParam?: string }) {
   const isNew = !slugParam
   const navigate = useNavigate()
+  const confirm = useConfirm()
   const fields = col.fields
   const hasDraft = fields.some((f) => f.name === 'draft' && f.type === 'boolean')
 
@@ -82,9 +84,13 @@ function Editor({ col, slugParam }: { col: Collection; slugParam?: string }) {
   const blocker = useBlocker(() => dirtyRef.current)
   useEffect(() => {
     if (blocker.state !== 'blocked') return
-    if (confirm('You have unsaved changes. Leave without saving?')) blocker.proceed()
-    else blocker.reset()
-  }, [blocker])
+    confirm({
+      title: 'Leave without saving?',
+      body: 'Your unsaved changes to this entry will be lost.',
+      confirmLabel: 'Leave',
+      destructive: true,
+    }).then((ok) => (ok ? blocker.proceed() : blocker.reset()))
+  }, [blocker, confirm])
   useEffect(() => {
     const h = (e: BeforeUnloadEvent) => { if (dirtyRef.current) e.preventDefault() }
     window.addEventListener('beforeunload', h)
@@ -145,7 +151,14 @@ function Editor({ col, slugParam }: { col: Collection; slugParam?: string }) {
   }
 
   async function remove() {
-    if (!entry || !confirm(`Delete "${title}"? This commits the deletion to the repository.`)) return
+    if (!entry) return
+    const ok = await confirm({
+      title: `Delete "${title}"?`,
+      body: 'This commits the deletion to the repository.',
+      confirmLabel: 'Delete',
+      destructive: true,
+    })
+    if (!ok) return
     setSaving(true)
     try {
       await api(entryUrl(slug), { method: 'DELETE', json: { sha: entry.sha, title } })

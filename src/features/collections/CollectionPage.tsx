@@ -1,5 +1,6 @@
 import { Link, useParams, useSearchParams } from 'react-router'
 import { ArrowDown, ArrowUp, Plus, Trash2 } from 'lucide-react'
+import { useConfirm } from '@/components/confirm'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -17,6 +18,7 @@ export function CollectionPage() {
   const { collection = '' } = useParams()
   const { config, error: cfgError } = useConfig()
   const [params, setParams] = useSearchParams()
+  const confirm = useConfirm()
   const col = config?.collections.find((c) => c.name === collection)
 
   const q = params.get('q') ?? ''
@@ -28,12 +30,19 @@ export function CollectionPage() {
   const { data, error, loading, refetch } = useFetch<ListResponse>(col ? `/entries/${col.name}?${query}` : null)
 
   async function remove(e: EntrySummary) {
-    if (!col || !confirm(`Delete "${e.title}"? This commits the deletion to the repository.`)) return
+    if (!col) return
+    const ok = await confirm({
+      title: `Delete "${e.title}"?`,
+      body: 'This commits the deletion to the repository.',
+      confirmLabel: 'Delete',
+      destructive: true,
+    })
+    if (!ok) return
     try {
       await api(`/entries/${col.name}/${e.slug}`, { method: 'DELETE', json: { sha: e.sha, title: e.title } })
       refetch()
     } catch (err) {
-      alert((err as Error).message)
+      confirm({ title: 'Could not delete entry', body: (err as Error).message, alert: true })
     }
   }
 

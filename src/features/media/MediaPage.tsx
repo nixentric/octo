@@ -1,6 +1,7 @@
 import { useRef, useState, type DragEvent } from 'react'
 import { useSearchParams } from 'react-router'
 import { Copy, File, Folder, LayoutGrid, List, Trash2, Upload } from 'lucide-react'
+import { useConfirm } from '@/components/confirm'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
@@ -25,6 +26,7 @@ export const publicToRaw = (cfg: { media_dir: string; public_media_path: string 
 export function MediaPage() {
   const { error: cfgError } = useConfig()
   const [params, setParams] = useSearchParams()
+  const confirm = useConfirm()
   const dir = params.get('dir') ?? ''
   const { data, error, loading, refetch } = useFetch<MediaResponse>(cfgError ? null : `/media?dir=${encodeURIComponent(dir)}`)
   const [view, setView] = useState<'grid' | 'list'>('grid')
@@ -49,12 +51,19 @@ export function MediaPage() {
       fd.append('file', file)
       fd.append('dir', current)
       const existing = data?.items.find((i) => i.name === file.name)
-      if (existing && !confirm(`${file.name} already exists. Replace it?`)) continue
-      if (existing) fd.append('sha', existing.sha)
+      if (existing) {
+        const replace = await confirm({
+          title: `${file.name} already exists`,
+          body: 'Replacing it commits a new version over the current file.',
+          confirmLabel: 'Replace',
+        })
+        if (!replace) continue
+        fd.append('sha', existing.sha)
+      }
       try {
         await api('/media', { method: 'POST', body: fd })
       } catch (e) {
-        alert((e as Error).message)
+        await confirm({ title: `Could not upload ${file.name}`, body: (e as Error).message, alert: true })
       }
     }
     setBusy(null)
@@ -62,13 +71,19 @@ export function MediaPage() {
   }
 
   async function remove(item: MediaItem) {
-    if (!confirm(`Delete ${item.name}? This commits the deletion to the repository.`)) return
+    const ok = await confirm({
+      title: `Delete ${item.name}?`,
+      body: 'This commits the deletion to the repository. Pages still using this file will show a broken image.',
+      confirmLabel: 'Delete',
+      destructive: true,
+    })
+    if (!ok) return
     setBusy(`Deleting ${item.name}…`)
     try {
       await api('/media', { method: 'DELETE', json: { path: item.path, sha: item.sha } })
       setPreview(null)
     } catch (e) {
-      alert((e as Error).message)
+      await confirm({ title: 'Could not delete file', body: (e as Error).message, alert: true })
     }
     setBusy(null)
     refetch()

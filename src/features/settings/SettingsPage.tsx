@@ -1,4 +1,5 @@
 import { useNavigate } from 'react-router'
+import { useConfirm } from '@/components/confirm'
 import { Button } from '@/components/ui/button'
 import { CONFIG_PATH } from '@/core/config'
 import { useSession } from '@/features/auth/session'
@@ -10,9 +11,15 @@ export function SettingsPage() {
   const { me, refresh } = useSession()
   const { config, refetch } = useConfig()
   const navigate = useNavigate()
+  const confirm = useConfirm()
 
   async function disconnect() {
-    if (!confirm('Disconnect this repository? You can connect it again at any time.')) return
+    const ok = await confirm({
+      title: 'Disconnect this repository?',
+      body: 'Your content stays in the repository. You can connect it again at any time.',
+      confirmLabel: 'Disconnect',
+    })
+    if (!ok) return
     await api('/repo', { method: 'DELETE' })
     await refresh()
     navigate('/connect', { replace: true })
