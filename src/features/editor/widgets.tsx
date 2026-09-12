@@ -67,7 +67,7 @@ const DatetimeWidget: Widget = ({ id, value, onChange }) => (
     type="datetime-local"
     className="max-w-xs"
     value={toLocalInput(value)}
-    onChange={(e) => onChange(e.target.value ? new Date(e.target.value).toISOString() : undefined)}
+    onChange={(e) => onChange(e.target.value ? new Date(e.target.value).toISOString().replace(/\.\d{3}Z$/, 'Z') : undefined)}
   />
 )
 

@@ -1,11 +1,14 @@
 import { useState } from 'react'
 import { NavLink, Outlet } from 'react-router'
-import { FileText, Image, LayoutDashboard, LogOut, Menu, Settings } from 'lucide-react'
+import { Check, ChevronsUpDown, FileText, Image, LayoutDashboard, LogOut, Menu, Plus, Settings } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import type { RepoInfo } from '@/core/types'
 import { logout, useSession } from '@/features/auth/session'
+import { api } from '@/lib/api'
+import { useFetch } from '@/lib/use-fetch'
 import { ConfigProvider, useConfig } from '@/features/config/use-config'
 import { cn } from '@/lib/utils'
 
@@ -28,9 +31,7 @@ function Shell() {
           <Menu />
         </Button>
         <NavLink to="/" className="font-semibold tracking-tight">Octo</NavLink>
-        <span className="hidden text-sm text-muted-foreground sm:inline">
-          {me?.repo?.owner}/{me?.repo?.name} <span className="mx-1 opacity-50">·</span> {me?.repo?.branch}
-        </span>
+        <SiteSwitcher />
         <div className="ml-auto">
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -63,6 +64,51 @@ function Shell() {
         </main>
       </div>
     </div>
+  )
+}
+
+function SiteSwitcher() {
+  const { me } = useSession()
+  const [open, setOpen] = useState(false)
+  const [switching, setSwitching] = useState<string | null>(null)
+  const { data } = useFetch<{ repos: RepoInfo[] }>(open ? '/repos' : null)
+  const current = me?.repo
+
+  async function switchTo(r: RepoInfo) {
+    if (r.owner === current?.owner && r.name === current?.name) return setOpen(false)
+    setSwitching(r.fullName)
+    await api('/repo', { method: 'POST', json: { owner: r.owner, name: r.name } })
+    window.location.href = '/'
+  }
+
+  return (
+    <DropdownMenu open={open} onOpenChange={setOpen}>
+      <DropdownMenuTrigger asChild>
+        <Button variant="ghost" size="sm" className="gap-1.5 text-muted-foreground">
+          <span className="max-w-[12rem] truncate sm:max-w-none">{current?.owner}/{current?.name}</span>
+          <span className="hidden opacity-50 sm:inline">· {current?.branch}</span>
+          <ChevronsUpDown className="size-3.5 opacity-50" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" className="max-h-96 w-72 overflow-y-auto">
+        <DropdownMenuLabel className="font-normal text-muted-foreground">Sites</DropdownMenuLabel>
+        {!data && <div className="px-2 py-1.5 text-sm text-muted-foreground">Loading…</div>}
+        {data?.repos.map((r) => {
+          const active = r.owner === current?.owner && r.name === current?.name
+          return (
+            <DropdownMenuItem key={r.fullName} onSelect={(e) => { e.preventDefault(); switchTo(r) }} disabled={!!switching}>
+              <Check className={cn('size-4', !active && 'opacity-0')} />
+              <span className="truncate">{r.fullName}</span>
+              {switching === r.fullName && <span className="ml-auto text-xs text-muted-foreground">Switching…</span>}
+            </DropdownMenuItem>
+          )
+        })}
+        <DropdownMenuSeparator />
+        <DropdownMenuItem asChild>
+          <NavLink to="/connect"><Plus /> Connect another site</NavLink>
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
   )
 }
 

@@ -121,8 +121,12 @@ function Editor({ col, slugParam }: { col: Collection; slugParam?: string }) {
   }
 
   async function save(overrides: Frontmatter = {}, force = false) {
-    const d = { ...data, ...overrides }
-    if (!validate(d)) return
+    const merged = { ...data, ...overrides }
+    if (!validate(merged)) return
+    // Write keys in the order the config declares them; unknown keys keep their place at the end.
+    const d: Frontmatter = {}
+    for (const f of fields) if (f.name !== 'body' && f.name in merged) d[f.name] = merged[f.name]
+    for (const k of Object.keys(merged)) if (!(k in d)) d[k] = merged[k]
     setSaving(true); setError(null)
     try {
       let sha = entry?.sha
@@ -239,7 +243,7 @@ function Editor({ col, slugParam }: { col: Collection; slugParam?: string }) {
 
         {panel !== 'none' && (
           <aside className={cn('shrink-0 border-t lg:w-[26rem] lg:border-l lg:border-t-0', panel === 'preview' ? 'h-[60vh] lg:h-auto lg:w-[32rem]' : 'max-h-[40vh] overflow-y-auto lg:max-h-none')}>
-            {panel === 'history' && <HistoryPanel path={entry!.path} activeSha={version?.commit.sha} onSelect={viewVersion} />}
+            {panel === 'history' && <HistoryPanel key={entry!.sha} path={entry!.path} activeSha={version?.commit.sha} onSelect={viewVersion} />}
             {panel === 'preview' && <Preview fields={fields} data={shown.data} body={shown.body} />}
           </aside>
         )}
