@@ -1,0 +1,6 @@
+# Copy to .dev.vars for local dev. In production set these with `wrangler secret put`.
+# GitHub App → General → Client ID / Generate a new client secret
+GITHUB_CLIENT_ID=
+GITHUB_CLIENT_SECRET=
+# Any long random string, e.g. `openssl rand -hex 32`. Encrypts the session cookie.
+SESSION_SECRET=
