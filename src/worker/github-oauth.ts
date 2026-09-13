@@ -20,7 +20,13 @@ async function tokenRequest(env: Env, params: Record<string, string>): Promise<T
   const res = await fetch('https://github.com/login/oauth/access_token', {
     method: 'POST',
     headers: { Accept: 'application/json', 'Content-Type': 'application/json', 'User-Agent': 'octo-cms' },
-    body: JSON.stringify({ client_id: env.GITHUB_CLIENT_ID, client_secret: env.GITHUB_CLIENT_SECRET, ...params }),
+    // Trimmed: a secret pasted with a trailing space is rejected by GitHub with
+    // a message that points at the credentials rather than the whitespace.
+    body: JSON.stringify({
+      client_id: env.GITHUB_CLIENT_ID.trim(),
+      client_secret: env.GITHUB_CLIENT_SECRET.trim(),
+      ...params,
+    }),
   })
 
   const body = await res.text()
@@ -28,7 +34,14 @@ async function tokenRequest(env: Env, params: Record<string, string>): Promise<T
   try {
     data = JSON.parse(body) as TokenResponse
   } catch {
-    return { ok: false, error: `GitHub returned an unexpected ${res.status} response. Try signing in again.` }
+    // GitHub answers a rejected authorization code with its own 500 error page.
+    return {
+      ok: false,
+      error:
+        res.status === 500
+          ? 'GitHub rejected that sign-in code. It was probably already used — start again from the login screen.'
+          : `GitHub returned an unexpected ${res.status} response. Try signing in again.`,
+    }
   }
 
   if (data.access_token) {

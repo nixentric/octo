@@ -13,7 +13,7 @@ auth.get('/github', (c) => {
   const state = crypto.randomUUID()
   setCookie(c, STATE_COOKIE, state, { ...cookieOpts(c), maxAge: 600 })
   const url = new URL('https://github.com/login/oauth/authorize')
-  url.searchParams.set('client_id', c.env.GITHUB_CLIENT_ID)
+  url.searchParams.set('client_id', c.env.GITHUB_CLIENT_ID.trim())
   url.searchParams.set('redirect_uri', new URL('/auth/github/callback', c.req.url).toString())
   url.searchParams.set('state', state)
   return c.redirect(url.toString())
@@ -43,9 +43,14 @@ function failed(c: Context<AppEnv>, message: string) {
   const escaped = message.replace(/[&<>]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[ch]!)
   return c.html(
     `<!doctype html><meta charset="utf-8"><title>Sign-in failed</title>
-<style>body{font:15px/1.6 system-ui,sans-serif;max-width:26rem;margin:20vh auto;padding:0 1rem;color:#111}
-a{display:inline-block;margin-top:1rem;background:#111;color:#fff;padding:.5rem 1rem;border-radius:.375rem;text-decoration:none}</style>
-<h1 style="font-size:1.25rem">Could not sign in</h1><p>${escaped}</p><a href="/auth/github">Try again</a>`,
+<style>
+:root{color-scheme:light dark;--fg:#111;--bg:#fff;--btn:#111;--btn-fg:#fff}
+@media (prefers-color-scheme:dark){:root{--fg:#fafafa;--bg:#111;--btn:#fafafa;--btn-fg:#111}}
+body{font:15px/1.6 system-ui,sans-serif;max-width:26rem;margin:20vh auto;padding:0 1rem;color:var(--fg);background:var(--bg)}
+h1{font-size:1.25rem}
+a{display:inline-block;margin-top:1rem;background:var(--btn);color:var(--btn-fg);padding:.5rem 1rem;border-radius:.375rem;text-decoration:none}
+</style>
+<h1>Could not sign in</h1><p>${escaped}</p><a href="/auth/github">Try again</a>`,
     400,
   )
 }
