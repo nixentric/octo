@@ -32,3 +32,22 @@ test('round-trips every slug back to a path that maps to it', () => {
     }
   }
 })
+
+const link = (folder: string, slug: string, data = {}) => hugo.permalink('content', folder, slug, data)
+
+test('builds the published URL from section and slug', () => {
+  assert.equal(link('content/posts', 'promo'), '/posts/promo/')
+  assert.equal(link('content/guides', 'cara-membuat-konten'), '/guides/cara-membuat-konten/')
+  assert.equal(link('content', 'about'), '/about/')
+  assert.equal(link('content/posts', '2026/arsip'), '/posts/2026/arsip/')
+})
+
+test('frontmatter overrides win over the file name', () => {
+  assert.equal(link('content/posts', 'promo', { slug: 'promo-september' }), '/posts/promo-september/')
+  assert.equal(link('content/posts', 'promo', { url: '/deals/september' }), '/deals/september/')
+  assert.equal(link('content/posts', 'promo', { url: 'deals/' }), '/deals/')
+})
+
+test('published URLs are lowercase', () => {
+  assert.equal(link('content/posts', 'Promo-September'), '/posts/promo-september/')
+})

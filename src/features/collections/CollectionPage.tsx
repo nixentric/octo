@@ -1,5 +1,5 @@
 import { Link, useParams, useSearchParams } from 'react-router'
-import { ArrowDown, ArrowUp, Plus, SlidersHorizontal, Trash2 } from 'lucide-react'
+import { ArrowDown, ArrowUp, ExternalLink, Plus, SlidersHorizontal, Trash2 } from 'lucide-react'
 import { useConfirm } from '@/components/confirm'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -99,7 +99,7 @@ export function CollectionPage() {
               <TableHead className="w-28">Status</TableHead>
               <SortHead label="Last updated" k="updated" sort={sort} dir={dir} onClick={toggleSort} className="w-44" />
               <TableHead className="w-36">Author</TableHead>
-              <TableHead className="w-12" />
+              <TableHead className="w-24" />
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -129,7 +129,12 @@ export function CollectionPage() {
                 </TableCell>
                 <TableCell className="text-muted-foreground">{formatDateTime(e.updatedAt)}</TableCell>
                 <TableCell className="text-muted-foreground">{e.author ?? '—'}</TableCell>
-                <TableCell>
+                <TableCell className="text-right">
+                  {config?.site_url && e.permalink && (
+                    <Button variant="ghost" size="icon" asChild aria-label={`View ${e.title} on the site`} title="View on the site">
+                      <a href={new URL(e.permalink, config.site_url).toString()} target="_blank" rel="noreferrer"><ExternalLink /></a>
+                    </Button>
+                  )}
                   <Button variant="ghost" size="icon" onClick={() => remove(e)} aria-label={`Delete ${e.title}`}><Trash2 /></Button>
                 </TableCell>
               </TableRow>

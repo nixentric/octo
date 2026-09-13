@@ -26,4 +26,17 @@ export const hugo: SiteAdapter = {
     `${folder}/${slug}.${extension}`,
     `${folder}/${slug}/index.${extension}`,
   ],
+
+  // Hugo's default permalink is /<section>/<slug>/. Frontmatter wins where it
+  // sets one, but a site with custom `permalinks` rules can still differ — this
+  // is a best guess, not a promise.
+  permalink(contentDir, folder, slug, data) {
+    if (typeof data.url === 'string' && data.url) return ensureSlashes(data.url)
+    const section = folder === contentDir ? '' : folder.slice(contentDir.length + 1)
+    const parts = slug.split('/')
+    if (typeof data.slug === 'string' && data.slug) parts[parts.length - 1] = data.slug
+    return ensureSlashes([section, ...parts].filter(Boolean).join('/').toLowerCase())
+  },
 }
+
+const ensureSlashes = (path: string) => `/${path.replace(/^\/+|\/+$/g, '')}/`.replace('//', '/')

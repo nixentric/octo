@@ -271,6 +271,7 @@ const siteBody = z.object({
   content_dir: z.string().min(1).optional(),
   media_dir: z.string().min(1).optional(),
   public_media_path: z.string().startsWith('/').optional(),
+  site_url: z.union([z.string().url(), z.literal('')]).optional(),
 }).refine((v) => Object.values(v).every((x) => typeof x !== 'string' || !x.includes('..')), 'invalid path')
 
 api.patch('/config', withRepo, async (c) => {
@@ -281,7 +282,9 @@ api.patch('/config', withRepo, async (c) => {
   if (!parsed.success) return c.json({ error: `${CONFIG_PATH} is invalid`, issues: parsed.error.issues }, 422)
 
   for (const [key, value] of Object.entries(body.data)) {
-    if (value !== undefined) doc.set(key, value)
+    if (value === undefined) continue
+    if (value === '') doc.delete(key)
+    else doc.set(key, value)
   }
   return commitConfig(c, doc, file.sha, 'cms: update site settings')
 })
@@ -451,16 +454,22 @@ async function collectionEntries(
   git: GitProvider,
   adapter: SiteAdapter,
   col: Collection,
+  contentDir: string,
 ): Promise<EntrySummary[]> {
   const cached = await readCache(session.token, listingKey(session.repo!, col.name))
   if (cached) return JSON.parse(cached)
 
-  const entries = await buildEntries(git, adapter, col)
+  const entries = await buildEntries(git, adapter, col, contentDir)
   await writeCache(session.token, listingKey(session.repo!, col.name), JSON.stringify(entries), LISTING_TTL)
   return entries
 }
 
-async function buildEntries(git: GitProvider, adapter: SiteAdapter, col: Collection): Promise<EntrySummary[]> {
+async function buildEntries(
+  git: GitProvider,
+  adapter: SiteAdapter,
+  col: Collection,
+  contentDir: string,
+): Promise<EntrySummary[]> {
   const found = (await git.listTree(col.folder))
     .map((f) => ({ path: f.path, slug: adapter.pathToSlug(col.folder, f.path, col.extension) }))
     .filter((f): f is { path: string; slug: string } => f.slug !== null)
@@ -476,12 +485,13 @@ async function buildEntries(git: GitProvider, adapter: SiteAdapter, col: Collect
       status: adapter.statusOf(data),
       updatedAt: m.lastCommit?.date,
       author: m.lastCommit?.author.name,
+      permalink: adapter.permalink(contentDir, col.folder, slug, data),
     }
   })
 }
 
 api.get('/entries/:collection', collectionOf, async (c) => {
-  let entries = await collectionEntries(c.get('session'), c.get('git'), c.get('adapter'), c.get('collection'))
+  let entries = await collectionEntries(c.get('session'), c.get('git'), c.get('adapter'), c.get('collection'), c.get('config').content_dir)
 
   const { q = '', sort = 'updated', dir = 'desc', page = '1' } = c.req.query()
   if (q) {
@@ -579,7 +589,7 @@ api.get('/stats', withRepo, withConfig, async (c) => {
 
   const perCollection = await Promise.all(
     config.collections.map(async (col) => {
-      const entries = await collectionEntries(session, git, adapter, col)
+      const entries = await collectionEntries(session, git, adapter, col, config.content_dir)
       return {
         ...summarise(col.name, col.label, entries),
         stale: stalest(entries, 3).map((e) => ({ slug: e.slug, title: e.title, updatedAt: e.updatedAt })),

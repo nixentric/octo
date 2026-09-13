@@ -12,6 +12,10 @@ const generic: SiteAdapter = {
     return path.slice(folder.length + 1, -ext.length)
   },
   entryPaths: (folder, slug, extension) => [`${folder}/${slug}.${extension}`],
+  permalink: (contentDir, folder, slug) => {
+    const section = folder === contentDir ? '' : folder.slice(contentDir.length + 1)
+    return `/${[section, slug].filter(Boolean).join('/')}`
+  },
 }
 
 export const adapters: Record<CmsConfig['adapter'], SiteAdapter> = { hugo, generic }

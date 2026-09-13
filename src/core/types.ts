@@ -31,6 +31,8 @@ export type EntrySummary = {
   status: EntryStatus
   updatedAt?: string
   author?: string
+  /** Path on the live site, when the adapter can work one out. */
+  permalink?: string
 }
 
 export type EntryDetail = { path: string; slug: string; sha: string; data: Frontmatter; body: string }

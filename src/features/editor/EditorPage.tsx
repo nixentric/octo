@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link, useBlocker, useLocation, useNavigate, useParams } from 'react-router'
 import YAML from 'yaml'
-import { ArrowLeft, Eye, History, Trash2, X } from 'lucide-react'
+import { ArrowLeft, ExternalLink, Eye, History, Trash2, X } from 'lucide-react'
 import { useConfirm } from '@/components/confirm'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -9,7 +9,8 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Textarea } from '@/components/ui/textarea'
-import { fieldPanel, isBodyField, type Collection, type Field } from '@/core/config'
+import { adapters } from '@/adapters'
+import { fieldPanel, isBodyField, type Collection, type Field, type ResolvedConfig } from '@/core/config'
 import type { Frontmatter } from '@/core/frontmatter'
 import { slugify } from '@/core/slug'
 import type { Commit, EntryDetail } from '@/core/types'
@@ -25,6 +26,9 @@ import { Preview } from './Preview'
 import { FieldInput, FieldRow } from './registry'
 
 type Version = { commit: Commit; data: Frontmatter; body: string }
+
+const adapterPermalink = (config: ResolvedConfig, col: Collection, slug: string, data: Frontmatter) =>
+  adapters[config.adapter].permalink(config.content_dir, col.folder, slug, data)
 
 export function EditorPage() {
   const { collection = '', '*': slugParam } = useParams()
@@ -47,6 +51,7 @@ function defaults(fields: Field[]): Frontmatter {
 }
 
 function Editor({ col, slugParam }: { col: Collection; slugParam?: string }) {
+  const { config } = useConfig()
   const isNew = !slugParam
   const navigate = useNavigate()
   const confirm = useConfirm()
@@ -203,6 +208,10 @@ function Editor({ col, slugParam }: { col: Collection; slugParam?: string }) {
   if (error && !entry && !isNew) return <div className="p-6 text-sm text-destructive">{error}</div>
 
   const status = hasDraft ? (data.draft === true ? 'draft' : 'published') : null
+  const liveUrl =
+    config?.site_url && !isNew
+      ? new URL(adapterPermalink(config, col, slug, data), config.site_url).toString()
+      : null
   const mainFields = fields.filter((f) => fieldPanel(f) === 'main')
   const sidebarFields = fields.filter((f) => fieldPanel(f) === 'sidebar')
 
@@ -226,6 +235,11 @@ function Editor({ col, slugParam }: { col: Collection; slugParam?: string }) {
             {col.label}{status && <> · <Badge variant={status === 'draft' ? 'outline' : 'secondary'} className="ml-1">{status}</Badge></>}{dirty && ' · unsaved'}
           </div>
         </div>
+        {!isNew && liveUrl && (
+          <Button variant="ghost" size="sm" asChild title="Open the published page">
+            <a href={liveUrl} target="_blank" rel="noreferrer"><ExternalLink /> View</a>
+          </Button>
+        )}
         {!isNew && (
           <>
             <Button variant={panel === 'history' ? 'secondary' : 'ghost'} size="sm" onClick={() => setPanel((p) => (p === 'history' ? 'none' : 'history'))}><History /> History</Button>

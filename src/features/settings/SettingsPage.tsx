@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router'
-import { GripVertical, Link2, Plus, SlidersHorizontal, Trash2 } from 'lucide-react'
+import { Globe, GripVertical, Link2, Plus, SlidersHorizontal, Trash2 } from 'lucide-react'
 import { useConfirm } from '@/components/confirm'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogFooter, DialogTitle } from '@/components/ui/dialog'
@@ -17,7 +17,7 @@ import { move, useDragList } from '@/lib/use-drag-list'
 import { cn } from '@/lib/utils'
 import { FolderInput } from './FolderInput'
 
-type SiteSettings = Pick<ResolvedConfig, 'adapter' | 'content_dir' | 'media_dir' | 'public_media_path'>
+type SiteSettings = Pick<ResolvedConfig, 'adapter' | 'content_dir' | 'media_dir' | 'public_media_path'> & { site_url: string }
 
 export function SettingsPage() {
   const { me, refresh } = useSession()
@@ -63,6 +63,7 @@ function SiteSection({ config, onSaved }: { config: ResolvedConfig; onSaved: () 
     content_dir: config.content_dir,
     media_dir: config.media_dir,
     public_media_path: config.public_media_path,
+    site_url: config.site_url ?? '',
   }
   const [draft, setDraft] = useState(initial)
   const [saving, setSaving] = useState(false)
@@ -121,6 +122,23 @@ function SiteSection({ config, onSaved }: { config: ResolvedConfig; onSaved: () 
           </div>
           <p className="text-xs text-muted-foreground">The URL prefix those files get on the live site.</p>
         </div>
+      </div>
+
+      <div className="space-y-1.5">
+        <Label htmlFor="site_url">Website address</Label>
+        <div className="flex items-center gap-2">
+          <Globe className="size-4 shrink-0 text-muted-foreground" />
+          <Input
+            id="site_url"
+            type="url"
+            placeholder="https://example.com"
+            value={draft.site_url}
+            onChange={(e) => set({ site_url: e.target.value })}
+          />
+        </div>
+        <p className="text-xs text-muted-foreground">
+          Where the built site is published. Set it and each entry gets a link to its live page.
+        </p>
       </div>
 
       {error && <p className="text-sm text-destructive">{error}</p>}

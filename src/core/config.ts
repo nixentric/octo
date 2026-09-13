@@ -144,6 +144,8 @@ export type Collection = z.infer<typeof collectionSchema>
 export const configSchema = z.object({
   adapter: z.enum(['hugo', 'generic']).default('hugo'),
   branch: z.string().optional(),
+  /** Where the built site is published, so entries can link to their live page. */
+  site_url: z.string().url().optional(),
   content_dir: z.string().optional(),
   media_dir: z.string().optional(),
   public_media_path: z.string().optional(),

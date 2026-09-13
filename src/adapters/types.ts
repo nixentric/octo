@@ -12,4 +12,6 @@ export type SiteAdapter = {
   pathToSlug(folder: string, path: string, extension: string): string | null
   /** Paths a slug may live at, most likely first. */
   entryPaths(folder: string, slug: string, extension: string): string[]
+  /** Path the entry is published at on the live site, e.g. `/posts/promo/`. */
+  permalink(contentDir: string, folder: string, slug: string, data: Frontmatter): string
 }
