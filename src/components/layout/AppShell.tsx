@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { NavLink, Outlet } from 'react-router'
-import { Check, ChevronsUpDown, FileText, Image, LayoutDashboard, LogOut, PanelLeftClose, PanelLeftOpen, Plus, Settings } from 'lucide-react'
+import { Check, ChevronsUpDown, FileText, Image, LaptopMinimal, LayoutDashboard, LogOut, Moon, PanelLeftClose, PanelLeftOpen, Plus, Settings, Sun } from 'lucide-react'
 import { Logo } from '@/components/Logo'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -11,6 +11,7 @@ import type { RepoInfo } from '@/core/types'
 import { logout, useSession } from '@/features/auth/session'
 import { api } from '@/lib/api'
 import { useDelayed } from '@/lib/use-delayed'
+import { useTheme, type Theme } from '@/lib/theme'
 import { useFetch } from '@/lib/use-fetch'
 import { ConfigProvider, useConfig } from '@/features/config/use-config'
 import { cn } from '@/lib/utils'
@@ -70,8 +71,10 @@ function Shell() {
                 <span className="hidden sm:inline">{me?.user.login}</span>
               </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
+            <DropdownMenuContent align="end" className="w-48">
               <DropdownMenuLabel className="font-normal text-muted-foreground">{me?.user.name ?? me?.user.login}</DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              <ThemeItems />
               <DropdownMenuSeparator />
               <DropdownMenuItem onClick={logout}><LogOut /> Sign out</DropdownMenuItem>
             </DropdownMenuContent>
@@ -95,6 +98,27 @@ function Shell() {
         </main>
       </div>
     </div>
+  )
+}
+
+const THEMES: { value: Theme; label: string; icon: typeof Sun }[] = [
+  { value: 'light', label: 'Light', icon: Sun },
+  { value: 'dark', label: 'Dark', icon: Moon },
+  { value: 'system', label: 'System', icon: LaptopMinimal },
+]
+
+function ThemeItems() {
+  const { theme, setTheme } = useTheme()
+  return (
+    <>
+      <DropdownMenuLabel className="font-normal text-muted-foreground">Appearance</DropdownMenuLabel>
+      {THEMES.map(({ value, label, icon: Icon }) => (
+        <DropdownMenuItem key={value} onSelect={(e) => { e.preventDefault(); setTheme(value) }}>
+          <Icon /> {label}
+          <Check className={cn('ml-auto size-4', theme !== value && 'opacity-0')} />
+        </DropdownMenuItem>
+      ))}
+    </>
   )
 }
 
