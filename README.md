@@ -6,6 +6,19 @@ A lightweight Git-based CMS. Content lives in a GitHub repository as Markdown + 
 Browser (React) → Cloudflare Worker (/api, /auth) → GitHub API → your repository → static site build
 ```
 
+## Running it
+
+**Host your own** — the expected route. Fork this, register your own GitHub App, set your own
+secrets, deploy your own Worker. Nothing of yours passes through anyone else's server, and the
+whole setup is the five steps below.
+
+**Use someone else's instance** — also possible without changing a line. Each visitor signs in with
+their own GitHub account, and the repository list comes from *their* own installations of that
+instance's GitHub App, so tenants never see each other. Running an instance for other people does
+mean two things: their GitHub tokens are sealed with your `SESSION_SECRET` and therefore readable by
+your Worker, and the GitHub App they install on their repositories is yours to keep working. Set the
+app to **Any account** if you intend to offer this.
+
 ## Stack
 
 React + TypeScript + Vite · Tailwind v4 + shadcn/ui · Hono on Cloudflare Workers · GitHub App (OAuth user flow) · Zod.
@@ -17,8 +30,10 @@ React + TypeScript + Vite · Tailwind v4 + shadcn/ui · Hono on Cloudflare Worke
 GitHub → Settings → Developer settings → GitHub Apps → **New GitHub App**
 
 - **Callback URL**: `http://localhost:5173/auth/github/callback` (add your production URL later)
-- **Request user authorization (OAuth) during installation**: on
-- **Expire user authorization tokens**: on (the Worker refreshes them)
+- **Request user authorization (OAuth) during installation**: off — installing grants repository
+  access, and signing in is a separate, explicit step
+- **Expire user authorization tokens**: your call. On is stricter (8-hour tokens, refreshed
+  automatically); the Worker handles either setting
 - **Webhook**: off
 - **Repository permissions**: `Contents: Read and write`, `Metadata: Read-only`
 - **Where can this app be installed**: Any account
