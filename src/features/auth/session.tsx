@@ -46,7 +46,7 @@ export function RequireRepo() {
 }
 
 export function Splash() {
-  return <div className="flex h-screen items-center justify-center text-sm text-muted-foreground">Loading…</div>
+  return <div className="h-screen" aria-busy="true" aria-label="Loading" />
 }
 
 export async function logout() {

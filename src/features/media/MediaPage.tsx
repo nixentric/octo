@@ -5,6 +5,7 @@ import { useConfirm } from '@/components/confirm'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
+import { Skeleton } from '@/components/ui/skeleton'
 import type { FileEntry } from '@/core/types'
 import { ConfigNotice } from '@/features/config/ConfigNotice'
 import { useConfig } from '@/features/config/use-config'
@@ -131,7 +132,11 @@ export function MediaPage() {
 
       {busy && <p className="text-sm text-muted-foreground">{busy}</p>}
       {error && <p className="text-sm text-destructive">{error.message}</p>}
-      {loading && !data && <p className="text-sm text-muted-foreground">Loading…</p>}
+      {loading && !data && (
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-6">
+          {Array.from({ length: 12 }, (_, i) => <Skeleton key={i} className="aspect-square" />)}
+        </div>
+      )}
       {data && items.length === 0 && (
         <p className="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">
           No files here. Drop files anywhere to upload.

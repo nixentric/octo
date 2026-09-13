@@ -4,6 +4,7 @@ import { ExternalLink, Lock, RefreshCw } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Skeleton } from '@/components/ui/skeleton'
 import { api } from '@/lib/api'
 import { useFetch } from '@/lib/use-fetch'
 import type { RepoInfo } from '@/core/types'
@@ -58,7 +59,16 @@ export function ConnectRepoPage() {
         )}
       </div>
 
-      {loading && <p className="text-sm text-muted-foreground">Loading repositories…</p>}
+      {loading && (
+        <ul className="divide-y rounded-md border">
+          {Array.from({ length: 6 }, (_, i) => (
+            <li key={i} className="flex items-center justify-between px-3 py-2.5">
+              <Skeleton className="h-4 w-56" />
+              <Skeleton className="h-3 w-12" />
+            </li>
+          ))}
+        </ul>
+      )}
       {error && <p className="text-sm text-destructive">{error.message}</p>}
       {data && repos.length === 0 && (
         <p className="text-sm text-muted-foreground">

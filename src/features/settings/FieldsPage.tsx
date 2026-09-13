@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Skeleton } from '@/components/ui/skeleton'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import {
@@ -69,7 +70,25 @@ export function FieldsPage() {
   const drag = useDragList((from, to) => setRows((r) => (r ? move(r, from, to) : r)))
 
   if (cfgError) return <div className="p-6"><ConfigNotice /></div>
-  if (!col || !rows || !fields) return <div className="p-6 text-sm text-muted-foreground">Loading…</div>
+  if (!col || !rows || !fields) {
+    return (
+      <div className="mx-auto max-w-3xl space-y-5 p-6">
+        <Skeleton className="h-7 w-56" />
+        <ul className="space-y-2">
+          {Array.from({ length: 6 }, (_, i) => (
+            <li key={i} className="flex items-center gap-2 rounded-md border p-2">
+              <Skeleton className="size-4" />
+              <div className="flex-1 space-y-1.5">
+                <Skeleton className="h-4 w-32" />
+                <Skeleton className="h-3 w-20" />
+              </div>
+              <Skeleton className="h-5 w-20 rounded-full" />
+            </li>
+          ))}
+        </ul>
+      </div>
+    )
+  }
 
   const duplicateIds = fields.map((f) => f.id).filter((id, i, all) => all.indexOf(id) !== i)
   const localErrors = fields.flatMap((f) => {

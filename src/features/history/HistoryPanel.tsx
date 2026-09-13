@@ -1,3 +1,4 @@
+import { Skeleton } from '@/components/ui/skeleton'
 import type { Commit } from '@/core/types'
 import { firstLine, formatDateTime } from '@/lib/format'
 import { useFetch } from '@/lib/use-fetch'
@@ -7,7 +8,20 @@ export function HistoryPanel({ path, activeSha, onSelect }: { path: string; acti
   const { data, error, loading } = useFetch<Commit[]>(`/history?path=${encodeURIComponent(path)}&limit=50`)
   return (
     <div className="text-sm">
-      {loading && <p className="p-3 text-muted-foreground">Loading history…</p>}
+      {loading && (
+        <ul className="divide-y">
+          {Array.from({ length: 4 }, (_, i) => (
+            <li key={i} className="flex gap-3 px-3 py-2">
+              <Skeleton className="mt-0.5 size-5 rounded-full" />
+              <div className="flex-1 space-y-1.5">
+                <Skeleton className="h-3 w-28" />
+                <Skeleton className="h-4 w-24" />
+                <Skeleton className="h-3 w-40" />
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
       {error && <p className="p-3 text-destructive">{error.message}</p>}
       <ul className="divide-y">
         {data?.map((c, i) => (

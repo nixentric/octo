@@ -4,6 +4,7 @@ import { useConfirm } from '@/components/confirm'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Skeleton } from '@/components/ui/skeleton'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import type { EntrySummary } from '@/core/types'
 import { ConfigNotice } from '@/features/config/ConfigNotice'
@@ -102,9 +103,18 @@ export function CollectionPage() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {loading && !data && (
-              <TableRow><TableCell colSpan={5} className="text-muted-foreground">Loading…</TableCell></TableRow>
-            )}
+            {loading && !data && Array.from({ length: 5 }, (_, i) => (
+              <TableRow key={i}>
+                <TableCell>
+                  <Skeleton className="h-4 w-48" />
+                  <Skeleton className="mt-1.5 h-3 w-28" />
+                </TableCell>
+                <TableCell><Skeleton className="h-5 w-16 rounded-full" /></TableCell>
+                <TableCell><Skeleton className="h-4 w-32" /></TableCell>
+                <TableCell><Skeleton className="h-4 w-20" /></TableCell>
+                <TableCell />
+              </TableRow>
+            ))}
             {data?.entries.length === 0 && (
               <TableRow><TableCell colSpan={5} className="text-muted-foreground">No entries.</TableCell></TableRow>
             )}

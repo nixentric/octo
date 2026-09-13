@@ -1,4 +1,4 @@
-import { Hono } from 'hono'
+import { Hono, type Context } from 'hono'
 import { createMiddleware } from 'hono/factory'
 import YAML from 'yaml'
 import { z } from 'zod'
@@ -11,7 +11,7 @@ import type { EntryDetail, EntrySummary, RepoRef } from '@/core/types'
 import type { AppEnv } from '../env'
 import { gh, GitHubProvider } from '../providers/git/github'
 import { GitError, type GitProvider } from '../providers/git/types'
-import { cacheConfig, cachedConfig, dropCachedConfig } from '../config-cache'
+import { dropCache, readCache, repoScope, writeCache } from '../cache'
 import { getSession, setSession } from '../session'
 
 export const api = new Hono<AppEnv>()
@@ -35,7 +35,7 @@ type ConfigResult =
   | { ok: false; status: 'missing' | 'invalid'; error: string; issues?: unknown }
 
 async function loadConfig(git: GitProvider, cache?: { token: string; repo: RepoRef }): Promise<ConfigResult> {
-  let raw: string | null = cache ? await cachedConfig(cache.token, cache.repo) : null
+  let raw: string | null = cache ? await readCache(cache.token, repoScope(cache.repo, 'config')) : null
   if (raw === null) {
     try {
       raw = (await git.getFile(CONFIG_PATH)).content
@@ -43,7 +43,7 @@ async function loadConfig(git: GitProvider, cache?: { token: string; repo: RepoR
       if (e instanceof GitError && e.status === 404) return { ok: false, status: 'missing', error: `${CONFIG_PATH} not found` }
       throw e
     }
-    if (cache) await cacheConfig(cache.token, cache.repo, raw)
+    if (cache) await writeCache(cache.token, repoScope(cache.repo, 'config'), raw, 60)
   }
   let parsed: unknown
   try {
@@ -81,8 +81,14 @@ type GhRepo = {
   owner: { login: string }
 }
 
+const REPOS_TTL = 120
+
 api.get('/repos', async (c) => {
   const { token } = c.get('session')
+  const installUrl = `https://github.com/apps/${c.env.GITHUB_APP_SLUG}/installations/new`
+  const cached = await readCache(token, ['repos'])
+  if (cached) return c.json({ repos: JSON.parse(cached), installUrl })
+
   const { installations } = await gh<{ installations: { id: number }[] }>(token, '/user/installations')
   const lists = await Promise.all(
     installations.map((i) => gh<{ repositories: GhRepo[] }>(token, `/user/installations/${i.id}/repositories?per_page=100`)),
@@ -97,7 +103,8 @@ api.get('/repos', async (c) => {
       private: r.private,
       url: r.html_url,
     }))
-  return c.json({ repos, installUrl: `https://github.com/apps/${c.env.GITHUB_APP_SLUG}/installations/new` })
+  await writeCache(token, ['repos'], JSON.stringify(repos), REPOS_TTL)
+  return c.json({ repos, installUrl })
 })
 
 const repoBody = z.object({ owner: z.string().min(1), name: z.string().min(1), branch: z.string().min(1).optional() })
@@ -170,7 +177,7 @@ api.put('/config/collections/:collection/fields', withRepo, async (c) => {
     message: fieldsCommitMessage(name, current.data.collections[index].fields, parsedFields.data),
   })
   const s = c.get('session')
-  await dropCachedConfig(s.token, s.repo!)
+  await dropCache(s.token, repoScope(s.repo!, 'config'))
   return c.json({ ok: true, sha: r.sha, fields: parsedFields.data })
 })
 
@@ -212,14 +219,31 @@ async function writePath(git: GitProvider, adapter: SiteAdapter, col: Collection
 
 api.use('/entries/*', withRepo, withConfig)
 
-const collectionOf = createMiddleware<AppEnv & { Variables: { collection: Collection } }>(async (c, next) => {
+type CollectionEnv = AppEnv & { Variables: { collection: Collection } }
+type ListContext = Context<CollectionEnv>
+
+const collectionOf = createMiddleware<CollectionEnv>(async (c, next) => {
   const col = c.get('config').collections.find((x) => x.name === c.req.param('collection'))
   if (!col) return c.json({ error: 'Unknown collection' }, 404)
   c.set('collection', col)
   await next()
 })
 
-api.get('/entries/:collection', collectionOf, async (c) => {
+const LISTING_TTL = 30
+const listingKey = (repo: RepoRef, collection: string) => repoScope(repo, 'entries', collection)
+
+async function collectionEntries(c: ListContext): Promise<EntrySummary[]> {
+  const col = c.get('collection')
+  const { token, repo } = c.get('session')
+  const cached = await readCache(token, listingKey(repo!, col.name))
+  if (cached) return JSON.parse(cached)
+
+  const entries = await buildEntries(c)
+  await writeCache(token, listingKey(repo!, col.name), JSON.stringify(entries), LISTING_TTL)
+  return entries
+}
+
+async function buildEntries(c: ListContext): Promise<EntrySummary[]> {
   const col = c.get('collection')
   const git = c.get('git')
   const adapter = c.get('adapter')
@@ -227,7 +251,7 @@ api.get('/entries/:collection', collectionOf, async (c) => {
     .map((f) => ({ path: f.path, slug: adapter.pathToSlug(col.folder, f.path, col.extension) }))
     .filter((f): f is { path: string; slug: string } => f.slug !== null)
   const metas = await git.getFilesWithMeta(found.map((f) => f.path))
-  let entries: EntrySummary[] = metas.map((m, i) => {
+  return metas.map((m, i) => {
     const slug = found[i].slug
     const { data } = adapter.parse(m.text ?? '')
     return {
@@ -240,6 +264,10 @@ api.get('/entries/:collection', collectionOf, async (c) => {
       author: m.lastCommit?.author.name,
     }
   })
+}
+
+api.get('/entries/:collection', collectionOf, async (c) => {
+  let entries = await collectionEntries(c)
 
   const { q = '', sort = 'updated', dir = 'desc', page = '1' } = c.req.query()
   if (q) {
@@ -283,6 +311,7 @@ api.post('/entries/:collection', collectionOf, async (c) => {
     content: adapter.serialize({ data, body }),
     message: `cms: create ${col.name} "${adapter.titleOf(data, slug)}"`,
   })
+  await dropCache(c.get('session').token, listingKey(c.get('session').repo!, col.name))
   const out: EntryDetail = { path, slug, sha: r.sha, data, body }
   return c.json(out, 201)
 })
@@ -305,6 +334,7 @@ api.put('/entries/:collection/:slug{.+}', collectionOf, async (c) => {
     content: adapter.serialize({ data, body }),
     message: `cms: update ${col.name} "${adapter.titleOf(data, slug)}"`,
   })
+  await dropCache(c.get('session').token, listingKey(c.get('session').repo!, col.name))
   const out: EntryDetail = { path, slug, sha: r.sha, data, body }
   return c.json(out)
 })
@@ -322,6 +352,7 @@ api.delete('/entries/:collection/:slug{.+}', collectionOf, async (c) => {
     sha: p.data.sha,
     message: `cms: delete ${col.name} "${p.data.title ?? slug}"`,
   })
+  await dropCache(c.get('session').token, listingKey(c.get('session').repo!, col.name))
   return c.json({ ok: true })
 })
 

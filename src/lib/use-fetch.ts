@@ -8,7 +8,9 @@ export function useFetch<T>(path: string | null) {
   useEffect(() => {
     if (!path) return
     let alive = true
-    setState((s) => ({ ...s, loading: true }))
+    // Drop the previous path's result: showing one collection's entries under
+    // another collection's heading is worse than showing a loading state.
+    setState({ loading: true })
     api<T>(path)
       .then((data) => alive && setState({ data, loading: false }))
       .catch((error: ApiError) => alive && setState({ error, loading: false }))

@@ -3,6 +3,7 @@ import { NavLink, Outlet } from 'react-router'
 import { Check, ChevronsUpDown, FileText, Image, LayoutDashboard, LogOut, PanelLeftClose, PanelLeftOpen, Plus, Settings } from 'lucide-react'
 import { Logo } from '@/components/Logo'
 import { Button } from '@/components/ui/button'
+import { Skeleton } from '@/components/ui/skeleton'
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
@@ -116,7 +117,13 @@ function SiteSwitcher() {
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="max-h-96 w-72 overflow-y-auto">
         <DropdownMenuLabel className="font-normal text-muted-foreground">Sites</DropdownMenuLabel>
-        {!data && <div className="px-2 py-1.5 text-sm text-muted-foreground">Loading…</div>}
+        {!data &&
+          Array.from({ length: 3 }, (_, i) => (
+            <div key={i} className="flex items-center gap-2 px-2 py-1.5">
+              <Skeleton className="size-4" />
+              <Skeleton className="h-4 w-40" />
+            </div>
+          ))}
         {data?.repos.map((r) => {
           const active = r.owner === current?.owner && r.name === current?.name
           return (

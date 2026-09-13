@@ -7,6 +7,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Skeleton } from '@/components/ui/skeleton'
 import { Textarea } from '@/components/ui/textarea'
 import { fieldPanel, isBodyField, type Collection, type Field } from '@/core/config'
 import type { Frontmatter } from '@/core/frontmatter'
@@ -196,7 +197,7 @@ function Editor({ col, slugParam }: { col: Collection; slugParam?: string }) {
     setData(version.data); setBody(version.body); setVersion(null); setDirty(true)
   }
 
-  if (loading) return <div className="p-6 text-sm text-muted-foreground">Loading…</div>
+  if (loading) return <EditorSkeleton />
   if (error && !entry && !isNew) return <div className="p-6 text-sm text-destructive">{error}</div>
 
   const status = hasDraft ? (data.draft === true ? 'draft' : 'published') : null
@@ -299,6 +300,40 @@ function Editor({ col, slugParam }: { col: Collection; slugParam?: string }) {
             {panel === 'preview' && <Preview fields={fields} data={shown.data} body={shown.body} />}
           </aside>
         )}
+      </div>
+    </div>
+  )
+}
+
+function EditorSkeleton() {
+  return (
+    <div className="flex h-full flex-col">
+      <div className="flex items-center gap-3 border-b px-4 py-2">
+        <Skeleton className="size-9 rounded-md" />
+        <div className="flex-1 space-y-1.5">
+          <Skeleton className="h-4 w-48" />
+          <Skeleton className="h-3 w-24" />
+        </div>
+        <Skeleton className="h-8 w-20" />
+        <Skeleton className="h-8 w-20" />
+      </div>
+      <div className="mx-auto flex w-full max-w-6xl flex-col gap-8 p-6 xl:flex-row">
+        <div className="min-w-0 flex-1 space-y-6">
+          {[64, 96, 384].map((h, i) => (
+            <div key={i} className="space-y-1.5">
+              <Skeleton className="h-4 w-24" />
+              <Skeleton style={{ height: h }} />
+            </div>
+          ))}
+        </div>
+        <div className="w-full shrink-0 space-y-6 rounded-md border p-4 xl:w-72">
+          {Array.from({ length: 4 }, (_, i) => (
+            <div key={i} className="space-y-1.5">
+              <Skeleton className="h-4 w-20" />
+              <Skeleton className="h-9" />
+            </div>
+          ))}
+        </div>
       </div>
     </div>
   )
