@@ -1,11 +1,17 @@
-import type { CmsConfig, ResolvedConfig } from '@/core/config'
-import { hugo } from './hugo'
-import type { SiteAdapter } from './types'
+import type { CmsConfig, ResolvedConfig } from '../core/config.ts'
+import { hugo } from './hugo.ts'
+import type { SiteAdapter } from './types.ts'
 
 const generic: SiteAdapter = {
   ...hugo,
   name: 'generic',
   defaults: { content_dir: 'content', media_dir: 'media', public_media_path: '/media' },
+  pathToSlug(folder, path, extension) {
+    const ext = `.${extension}`
+    if (!path.startsWith(`${folder}/`) || !path.endsWith(ext)) return null
+    return path.slice(folder.length + 1, -ext.length)
+  },
+  entryPaths: (folder, slug, extension) => [`${folder}/${slug}.${extension}`],
 }
 
 export const adapters: Record<CmsConfig['adapter'], SiteAdapter> = { hugo, generic }

@@ -1,5 +1,5 @@
 import { useRef, useState, type ReactNode } from 'react'
-import { Bold, Code, Heading2, ImageIcon, Italic, Link as LinkIcon, List, Quote, X } from 'lucide-react'
+import { Bold, ChevronDown, Code, Heading2, ImageIcon, Italic, Link as LinkIcon, List, Quote, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
@@ -10,6 +10,7 @@ import type { Field, WidgetType } from '@/core/config'
 import { useConfig } from '@/features/config/use-config'
 import { MediaPicker } from '@/features/media/MediaPicker'
 import { publicToRaw } from '@/features/media/MediaPage'
+import { cn } from '@/lib/utils'
 
 export type WidgetProps = { id: string; field: Field; value: unknown; onChange: (v: unknown) => void }
 export type Widget = (props: WidgetProps) => ReactNode
@@ -58,49 +59,112 @@ const MultiSelectWidget: Widget = ({ id, field, value, onChange }) => {
 const TagsWidget: Widget = ({ id, field, value, onChange }) => {
   const tags = Array.isArray(value) ? value.map(String) : value ? [String(value)] : []
   const [draft, setDraft] = useState('')
-  const listId = `${id}-suggestions`
+  const [open, setOpen] = useState(false)
+  const [active, setActive] = useState(0)
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  const options = field.options ?? []
+  const suggestions = options.filter((o) => !tags.includes(o) && o.toLowerCase().includes(draft.trim().toLowerCase()))
 
   const commit = (raw: string) => {
     const added = raw.split(',').map((t) => t.trim()).filter((t) => t && !tags.includes(t))
     if (added.length) onChange([...tags, ...added])
     setDraft('')
+    setActive(0)
   }
 
   return (
-    <div className="flex flex-wrap items-center gap-1.5 rounded-md border px-1.5 py-1 focus-within:ring-[3px] focus-within:ring-ring/50">
-      {tags.map((t) => (
-        <span key={t} className="inline-flex items-center gap-1 rounded bg-secondary py-0.5 pl-2 pr-1 text-sm">
-          {t}
+    <div className="relative max-w-xl">
+      <div className="flex flex-wrap items-center gap-1.5 rounded-md border px-1.5 py-1 focus-within:ring-[3px] focus-within:ring-ring/50">
+        {tags.map((t) => (
+          <span key={t} className="inline-flex items-center gap-1 rounded bg-secondary py-0.5 pl-2 pr-1 text-sm">
+            {t}
+            <button
+              type="button"
+              onClick={() => onChange(tags.filter((x) => x !== t))}
+              aria-label={`Remove ${t}`}
+              className="opacity-50 hover:opacity-100"
+            >
+              <X className="size-3" />
+            </button>
+          </span>
+        ))}
+        <input
+          id={id}
+          ref={inputRef}
+          role="combobox"
+          aria-expanded={open}
+          aria-controls={`${id}-suggestions`}
+          autoComplete="off"
+          value={draft}
+          onChange={(e) => {
+            if (e.target.value.includes(',')) return commit(e.target.value)
+            setDraft(e.target.value)
+            setActive(0)
+            setOpen(true)
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'ArrowDown') {
+              e.preventDefault()
+              setOpen(true)
+              setActive((a) => Math.min(a + 1, suggestions.length - 1))
+            } else if (e.key === 'ArrowUp') {
+              e.preventDefault()
+              setActive((a) => Math.max(a - 1, 0))
+            } else if (e.key === 'Escape') {
+              setOpen(false)
+            } else if (e.key === 'Enter') {
+              e.preventDefault()
+              commit(open && suggestions[active] ? suggestions[active] : draft)
+            } else if (e.key === 'Backspace' && !draft && tags.length) {
+              onChange(tags.slice(0, -1))
+            }
+          }}
+          onBlur={() => {
+            if (draft) commit(draft)
+            setOpen(false)
+          }}
+          placeholder={tags.length ? 'Add…' : 'Type a tag and press Enter'}
+          className="min-w-40 flex-1 bg-transparent px-1 py-0.5 text-sm outline-none"
+        />
+        {options.length > 0 && (
           <button
             type="button"
-            onClick={() => onChange(tags.filter((x) => x !== t))}
-            aria-label={`Remove ${t}`}
-            className="opacity-50 hover:opacity-100"
+            aria-label="Show suggestions"
+            className="shrink-0 rounded p-1 opacity-50 hover:bg-accent hover:opacity-100"
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => {
+              setOpen((o) => !o)
+              inputRef.current?.focus()
+            }}
           >
-            <X className="size-3" />
+            <ChevronDown className={cn('size-4 transition-transform', open && 'rotate-180')} />
           </button>
-        </span>
-      ))}
-      <input
-        id={id}
-        list={field.options?.length ? listId : undefined}
-        value={draft}
-        onChange={(e) => (e.target.value.includes(',') ? commit(e.target.value) : setDraft(e.target.value))}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter') {
-            e.preventDefault()
-            commit(draft)
-          } else if (e.key === 'Backspace' && !draft && tags.length) {
-            onChange(tags.slice(0, -1))
-          }
-        }}
-        onBlur={() => draft && commit(draft)}
-        placeholder={tags.length ? 'Add…' : 'Type a tag and press Enter'}
-        className="min-w-40 flex-1 bg-transparent px-1 py-0.5 text-sm outline-none"
-      />
-      {field.options?.length ? (
-        <datalist id={listId}>{field.options.map((o) => <option key={o} value={o} />)}</datalist>
-      ) : null}
+        )}
+      </div>
+
+      {open && suggestions.length > 0 && (
+        <ul id={`${id}-suggestions`} role="listbox" className="absolute z-20 mt-1 max-h-56 w-full overflow-auto rounded-md border bg-popover p-1 shadow-md">
+          {suggestions.map((o, i) => (
+            <li key={o}>
+              <button
+                type="button"
+                role="option"
+                aria-selected={i === active}
+                className={cn('w-full rounded px-2 py-1.5 text-left text-sm', i === active && 'bg-accent')}
+                onMouseDown={(e) => e.preventDefault()}
+                onMouseEnter={() => setActive(i)}
+                onClick={() => {
+                  commit(o)
+                  inputRef.current?.focus()
+                }}
+              >
+                {o}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   )
 }

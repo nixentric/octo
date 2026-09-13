@@ -92,6 +92,18 @@ export class GitHubProvider implements GitProvider {
     return res.map((f) => ({ path: f.path, name: f.name, type: f.type, size: f.size, sha: f.sha }))
   }
 
+  // ponytail: one recursive tree call per listing; GitHub truncates above ~100k
+  // entries, at which point this needs per-directory paging instead.
+  async listTree(prefix: string): Promise<{ path: string; sha: string }[]> {
+    const res = await gh<{ tree: { path: string; type: string; sha: string }[] }>(
+      this.token,
+      `${this.base}/git/trees/${encodeURIComponent(this.branch)}?recursive=1`,
+    )
+    return res.tree
+      .filter((e) => e.type === 'blob' && e.path.startsWith(`${prefix}/`))
+      .map((e) => ({ path: e.path, sha: e.sha }))
+  }
+
   async getFile(path: string, ref?: string): Promise<FileContent> {
     const f = await gh<GhContent>(this.token, this.contents(path, ref))
     if (f.type !== 'file' || f.content == null) throw new GitError(400, `${path} is not a file`)

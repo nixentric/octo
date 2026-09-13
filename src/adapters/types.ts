@@ -1,5 +1,5 @@
-import type { Frontmatter, ParsedEntry } from '@/core/frontmatter'
-import type { EntryStatus } from '@/core/types'
+import type { Frontmatter, ParsedEntry } from '../core/frontmatter.ts'
+import type { EntryStatus } from '../core/types.ts'
 
 export type SiteAdapter = {
   name: string
@@ -8,4 +8,8 @@ export type SiteAdapter = {
   serialize(entry: ParsedEntry): string
   statusOf(data: Frontmatter): EntryStatus
   titleOf(data: Frontmatter, slug: string): string
+  /** File path within a collection → entry slug, or null when the file is not an entry. */
+  pathToSlug(folder: string, path: string, extension: string): string | null
+  /** Paths a slug may live at, most likely first. */
+  entryPaths(folder: string, slug: string, extension: string): string[]
 }

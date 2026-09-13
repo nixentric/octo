@@ -16,6 +16,8 @@ export class GitError extends Error {
 export interface GitProvider {
   getRepository(): Promise<RepoInfo>
   listFiles(path: string): Promise<FileEntry[]>
+  /** Every file at any depth under `prefix`. */
+  listTree(prefix: string): Promise<{ path: string; sha: string }[]>
   getFile(path: string, ref?: string): Promise<FileContent>
   getFileRaw(path: string, ref?: string): Promise<ArrayBuffer>
   getFilesWithMeta(paths: string[]): Promise<FileMeta[]>

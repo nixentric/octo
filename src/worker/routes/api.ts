@@ -131,8 +131,14 @@ api.get('/config', withRepo, async (c) => {
 
 const SLUG = /^[A-Za-z0-9][A-Za-z0-9._\-/]*$/
 const validSlug = (s: string) => SLUG.test(s) && !s.includes('..')
-const entryPath = (col: Collection, slug: string) => `${col.folder}/${slug}.${col.extension}`
 const entryBody = z.object({ data: z.record(z.string(), z.unknown()), body: z.string().default('') })
+
+/** Where an existing entry actually lives — a single file, or a bundle's index file. */
+async function findEntryPath(git: GitProvider, adapter: SiteAdapter, col: Collection, slug: string) {
+  const candidates = adapter.entryPaths(col.folder, slug, col.extension)
+  const existing = new Set((await git.listTree(col.folder)).map((f) => f.path))
+  return candidates.find((p) => existing.has(p)) ?? null
+}
 
 api.use('/entries/*', withRepo, withConfig)
 
@@ -147,12 +153,12 @@ api.get('/entries/:collection', collectionOf, async (c) => {
   const col = c.get('collection')
   const git = c.get('git')
   const adapter = c.get('adapter')
-  const ext = `.${col.extension}`
-  // ponytail: flat folder only; Hugo page bundles (slug/index.md) are not listed yet
-  const files = (await git.listFiles(col.folder)).filter((f) => f.type === 'file' && f.name.endsWith(ext))
-  const metas = await git.getFilesWithMeta(files.map((f) => f.path))
+  const found = (await git.listTree(col.folder))
+    .map((f) => ({ path: f.path, slug: adapter.pathToSlug(col.folder, f.path, col.extension) }))
+    .filter((f): f is { path: string; slug: string } => f.slug !== null)
+  const metas = await git.getFilesWithMeta(found.map((f) => f.path))
   let entries: EntrySummary[] = metas.map((m, i) => {
-    const slug = files[i].name.slice(0, -ext.length)
+    const slug = found[i].slug
     const { data } = adapter.parse(m.text ?? '')
     return {
       path: m.path,
@@ -183,8 +189,11 @@ api.get('/entries/:collection/:slug{.+}', collectionOf, async (c) => {
   const col = c.get('collection')
   const slug = c.req.param('slug')
   if (!validSlug(slug)) return c.json({ error: 'Invalid slug' }, 400)
-  const f = await c.get('git').getFile(entryPath(col, slug), c.req.query('ref'))
-  const { data, body } = c.get('adapter').parse(f.content)
+  const adapter = c.get('adapter')
+  const path = await findEntryPath(c.get('git'), adapter, col, slug)
+  if (!path) return c.json({ error: 'Entry not found' }, 404)
+  const f = await c.get('git').getFile(path, c.req.query('ref'))
+  const { data, body } = adapter.parse(f.content)
   const out: EntryDetail = { path: f.path, slug, sha: f.sha, data, body }
   return c.json(out)
 })
@@ -197,7 +206,7 @@ api.post('/entries/:collection', collectionOf, async (c) => {
   const { slug, data, body } = p.data
   if (!validSlug(slug)) return c.json({ error: 'Invalid slug' }, 400)
   const adapter = c.get('adapter')
-  const path = entryPath(col, slug)
+  const [path] = adapter.entryPaths(col.folder, slug, col.extension)
   const r = await c.get('git').createFile({
     path,
     content: adapter.serialize({ data, body }),
@@ -215,7 +224,8 @@ api.put('/entries/:collection/:slug{.+}', collectionOf, async (c) => {
   if (!p.success) return c.json({ error: 'Invalid body', issues: p.error.issues }, 400)
   const { data, body, sha } = p.data
   const adapter = c.get('adapter')
-  const path = entryPath(col, slug)
+  const path = await findEntryPath(c.get('git'), adapter, col, slug)
+  if (!path) return c.json({ error: 'Entry not found' }, 404)
   const r = await c.get('git').updateFile({
     path,
     sha,
@@ -232,8 +242,10 @@ api.delete('/entries/:collection/:slug{.+}', collectionOf, async (c) => {
   if (!validSlug(slug)) return c.json({ error: 'Invalid slug' }, 400)
   const p = z.object({ sha: z.string().min(1), title: z.string().optional() }).safeParse(await c.req.json())
   if (!p.success) return c.json({ error: 'Invalid body' }, 400)
+  const path = await findEntryPath(c.get('git'), c.get('adapter'), col, slug)
+  if (!path) return c.json({ error: 'Entry not found' }, 404)
   await c.get('git').deleteFile({
-    path: entryPath(col, slug),
+    path,
     sha: p.data.sha,
     message: `cms: delete ${col.name} "${p.data.title ?? slug}"`,
   })
