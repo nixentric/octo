@@ -8,12 +8,13 @@ import { CONFIG_PATH, fieldSchema, normalizeField, parseConfig, type Collection,
 import { fieldsCommitMessage, fieldToYaml, reorderSeq } from '@/core/config-write'
 import { detectCollections, detectSite, inferFields, STARTER_FIELDS } from '@/core/generate-config'
 import { validateEntry } from '@/core/validate'
+import { dailyActivity, stalest, summarise } from '@/core/stats'
 import type { EntryDetail, EntrySummary, RepoRef } from '@/core/types'
 import type { AppEnv } from '../env'
 import { gh, GitHubProvider } from '../providers/git/github'
 import { GitError, type GitProvider } from '../providers/git/types'
 import { dropCache, readCache, repoScope, writeCache } from '../cache'
-import { getSession, setSession } from '../session'
+import { getSession, setSession, type Session } from '../session'
 
 export const api = new Hono<AppEnv>()
 
@@ -434,7 +435,6 @@ async function writePath(git: GitProvider, adapter: SiteAdapter, col: Collection
 api.use('/entries/*', withRepo, withConfig)
 
 type CollectionEnv = AppEnv & { Variables: { collection: Collection } }
-type ListContext = Context<CollectionEnv>
 
 const collectionOf = createMiddleware<CollectionEnv>(async (c, next) => {
   const col = c.get('config').collections.find((x) => x.name === c.req.param('collection'))
@@ -446,21 +446,21 @@ const collectionOf = createMiddleware<CollectionEnv>(async (c, next) => {
 const LISTING_TTL = 30
 const listingKey = (repo: RepoRef, collection: string) => repoScope(repo, 'entries', collection)
 
-async function collectionEntries(c: ListContext): Promise<EntrySummary[]> {
-  const col = c.get('collection')
-  const { token, repo } = c.get('session')
-  const cached = await readCache(token, listingKey(repo!, col.name))
+async function collectionEntries(
+  session: Session,
+  git: GitProvider,
+  adapter: SiteAdapter,
+  col: Collection,
+): Promise<EntrySummary[]> {
+  const cached = await readCache(session.token, listingKey(session.repo!, col.name))
   if (cached) return JSON.parse(cached)
 
-  const entries = await buildEntries(c)
-  await writeCache(token, listingKey(repo!, col.name), JSON.stringify(entries), LISTING_TTL)
+  const entries = await buildEntries(git, adapter, col)
+  await writeCache(session.token, listingKey(session.repo!, col.name), JSON.stringify(entries), LISTING_TTL)
   return entries
 }
 
-async function buildEntries(c: ListContext): Promise<EntrySummary[]> {
-  const col = c.get('collection')
-  const git = c.get('git')
-  const adapter = c.get('adapter')
+async function buildEntries(git: GitProvider, adapter: SiteAdapter, col: Collection): Promise<EntrySummary[]> {
   const found = (await git.listTree(col.folder))
     .map((f) => ({ path: f.path, slug: adapter.pathToSlug(col.folder, f.path, col.extension) }))
     .filter((f): f is { path: string; slug: string } => f.slug !== null)
@@ -481,7 +481,7 @@ async function buildEntries(c: ListContext): Promise<EntrySummary[]> {
 }
 
 api.get('/entries/:collection', collectionOf, async (c) => {
-  let entries = await collectionEntries(c)
+  let entries = await collectionEntries(c.get('session'), c.get('git'), c.get('adapter'), c.get('collection'))
 
   const { q = '', sort = 'updated', dir = 'desc', page = '1' } = c.req.query()
   if (q) {
@@ -568,6 +568,31 @@ api.delete('/entries/:collection/:slug{.+}', collectionOf, async (c) => {
   })
   await dropCache(c.get('session').token, listingKey(c.get('session').repo!, col.name))
   return c.json({ ok: true })
+})
+
+/** Content statistics for the dashboard, all derived from what is already in Git. */
+api.get('/stats', withRepo, withConfig, async (c) => {
+  const session = c.get('session')
+  const git = c.get('git')
+  const adapter = c.get('adapter')
+  const config = c.get('config')
+
+  const perCollection = await Promise.all(
+    config.collections.map(async (col) => {
+      const entries = await collectionEntries(session, git, adapter, col)
+      return {
+        ...summarise(col.name, col.label, entries),
+        stale: stalest(entries, 3).map((e) => ({ slug: e.slug, title: e.title, updatedAt: e.updatedAt })),
+        drafts: entries.filter((e) => e.status === 'draft').map((e) => ({ slug: e.slug, title: e.title })),
+      }
+    }),
+  )
+
+  const commits = await git.getHistory(undefined, 100)
+  return c.json({
+    collections: perCollection.map(({ drafts, ...rest }) => ({ ...rest, drafts: drafts.length, draftEntries: drafts })),
+    activity: dailyActivity(commits.map((x) => x.date), 30),
+  })
 })
 
 // ---------- history ----------

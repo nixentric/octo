@@ -5,6 +5,7 @@ import { ConfigNotice } from '@/features/config/ConfigNotice'
 import { useConfig } from '@/features/config/use-config'
 import { firstLine, formatDateTime } from '@/lib/format'
 import { useFetch } from '@/lib/use-fetch'
+import { ContentStats } from './ContentStats'
 
 type RepoResponse = { repo: RepoRef; info: RepoInfo }
 
@@ -32,6 +33,8 @@ export function DashboardPage() {
         <Stat label="Collections">{config ? config.collections.length : <Skeleton className="h-5 w-6" />}</Stat>
         <Stat label="Site type">{config?.adapter ?? <Skeleton className="h-5 w-14" />}</Stat>
       </dl>
+
+      <ContentStats />
 
       <div className="grid gap-8 lg:grid-cols-2">
         <CommitList title="Recent edits" commits={edits} loading={history.showLoading} empty="No edits made through the CMS yet." />
