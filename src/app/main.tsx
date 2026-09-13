@@ -11,6 +11,7 @@ import { DashboardPage } from '@/features/dashboard/DashboardPage'
 import { EditorPage } from '@/features/editor/EditorPage'
 import { MediaPage } from '@/features/media/MediaPage'
 import { ConnectRepoPage } from '@/features/settings/ConnectRepoPage'
+import { FieldsPage } from '@/features/settings/FieldsPage'
 import { SettingsPage } from '@/features/settings/SettingsPage'
 
 const router = createBrowserRouter(
@@ -27,6 +28,7 @@ const router = createBrowserRouter(
             <Route path="content/:collection/edit/*" element={<EditorPage />} />
             <Route path="media" element={<MediaPage />} />
             <Route path="settings" element={<SettingsPage />} />
+            <Route path="settings/collections/:collection" element={<FieldsPage />} />
           </Route>
         </Route>
       </Route>

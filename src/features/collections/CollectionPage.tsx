@@ -1,5 +1,5 @@
 import { Link, useParams, useSearchParams } from 'react-router'
-import { ArrowDown, ArrowUp, Plus, Trash2 } from 'lucide-react'
+import { ArrowDown, ArrowUp, Plus, SlidersHorizontal, Trash2 } from 'lucide-react'
 import { useConfirm } from '@/components/confirm'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -39,7 +39,7 @@ export function CollectionPage() {
     })
     if (!ok) return
     try {
-      await api(`/entries/${col.name}/${e.slug}`, { method: 'DELETE', json: { sha: e.sha, title: e.title } })
+      await api(`/entries/${col.name}/${e.slug}`, { method: 'DELETE', json: { sha: e.sha, title: e.title, path: e.path } })
       refetch()
     } catch (err) {
       confirm({ title: 'Could not delete entry', body: (err as Error).message, alert: true })
@@ -60,16 +60,21 @@ export function CollectionPage() {
 
   return (
     <div className="space-y-4 p-6">
-      <div className="flex items-center justify-between gap-4">
+      <div className="flex flex-wrap items-center gap-2">
         <div>
           <h1 className="text-xl font-semibold">{col.label}</h1>
           <p className="text-xs text-muted-foreground">{col.folder}</p>
         </div>
+        <div className="ml-auto flex gap-2">
+        <Button variant="outline" asChild>
+          <Link to={`/settings/collections/${col.name}`}><SlidersHorizontal /> Parameters</Link>
+        </Button>
         {col.create && (
           <Button asChild>
             <Link to={`/content/${col.name}/new`}><Plus /> New {col.label.replace(/s$/, '')}</Link>
           </Button>
         )}
+        </div>
       </div>
 
       <form
@@ -106,7 +111,7 @@ export function CollectionPage() {
             {data?.entries.map((e) => (
               <TableRow key={e.path}>
                 <TableCell>
-                  <Link to={`/content/${col.name}/edit/${e.slug}`} className="font-medium hover:underline">{e.title}</Link>
+                  <Link to={`/content/${col.name}/edit/${e.slug}`} state={{ path: e.path }} className="font-medium hover:underline">{e.title}</Link>
                   <div className="text-xs text-muted-foreground">{e.slug}</div>
                 </TableCell>
                 <TableCell>

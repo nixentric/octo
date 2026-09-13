@@ -4,11 +4,14 @@ import YAML from 'yaml'
 import { z } from 'zod'
 import { adapters, resolveConfig } from '@/adapters'
 import type { SiteAdapter } from '@/adapters/types'
-import { CONFIG_PATH, configSchema, type Collection, type ResolvedConfig } from '@/core/config'
-import type { EntryDetail, EntrySummary } from '@/core/types'
+import { CONFIG_PATH, fieldSchema, normalizeField, parseConfig, type Collection, type ResolvedConfig } from '@/core/config'
+import { fieldsCommitMessage, fieldToYaml } from '@/core/config-write'
+import { validateEntry } from '@/core/validate'
+import type { EntryDetail, EntrySummary, RepoRef } from '@/core/types'
 import type { AppEnv } from '../env'
 import { gh, GitHubProvider } from '../providers/git/github'
 import { GitError, type GitProvider } from '../providers/git/types'
+import { cacheConfig, cachedConfig, dropCachedConfig } from '../config-cache'
 import { getSession, setSession } from '../session'
 
 export const api = new Hono<AppEnv>()
@@ -31,13 +34,16 @@ type ConfigResult =
   | { ok: true; config: ResolvedConfig; adapter: SiteAdapter }
   | { ok: false; status: 'missing' | 'invalid'; error: string; issues?: unknown }
 
-async function loadConfig(git: GitProvider): Promise<ConfigResult> {
-  let raw: string
-  try {
-    raw = (await git.getFile(CONFIG_PATH)).content
-  } catch (e) {
-    if (e instanceof GitError && e.status === 404) return { ok: false, status: 'missing', error: `${CONFIG_PATH} not found` }
-    throw e
+async function loadConfig(git: GitProvider, cache?: { token: string; repo: RepoRef }): Promise<ConfigResult> {
+  let raw: string | null = cache ? await cachedConfig(cache.token, cache.repo) : null
+  if (raw === null) {
+    try {
+      raw = (await git.getFile(CONFIG_PATH)).content
+    } catch (e) {
+      if (e instanceof GitError && e.status === 404) return { ok: false, status: 'missing', error: `${CONFIG_PATH} not found` }
+      throw e
+    }
+    if (cache) await cacheConfig(cache.token, cache.repo, raw)
   }
   let parsed: unknown
   try {
@@ -45,13 +51,14 @@ async function loadConfig(git: GitProvider): Promise<ConfigResult> {
   } catch (e) {
     return { ok: false, status: 'invalid', error: `${CONFIG_PATH}: ${(e as Error).message}` }
   }
-  const r = configSchema.safeParse(parsed)
+  const r = parseConfig(parsed)
   if (!r.success) return { ok: false, status: 'invalid', error: `${CONFIG_PATH} is invalid`, issues: r.error.issues }
   return { ok: true, config: resolveConfig(r.data), adapter: adapters[r.data.adapter] }
 }
 
 const withConfig = createMiddleware<AppEnv>(async (c, next) => {
-  const r = await loadConfig(c.get('git'))
+  const s = c.get('session')
+  const r = await loadConfig(c.get('git'), { token: s.token, repo: s.repo! })
   if (!r.ok) return c.json(r, 422)
   c.set('config', r.config)
   c.set('adapter', r.adapter)
@@ -114,7 +121,8 @@ api.delete('/repo', async (c) => {
 
 api.get('/repo', withRepo, async (c) => {
   const git = c.get('git')
-  const [info, cfg] = await Promise.all([git.getRepository(), loadConfig(git)])
+  const s = c.get('session')
+  const [info, cfg] = await Promise.all([git.getRepository(), loadConfig(git, { token: s.token, repo: s.repo! })])
   return c.json({
     repo: c.get('session').repo,
     info,
@@ -123,8 +131,47 @@ api.get('/repo', withRepo, async (c) => {
 })
 
 api.get('/config', withRepo, async (c) => {
-  const r = await loadConfig(c.get('git'))
+  const s = c.get('session')
+  const r = await loadConfig(c.get('git'), { token: s.token, repo: s.repo! })
   return r.ok ? c.json(r.config) : c.json(r, 422)
+})
+
+/**
+ * Rewrites one collection's `fields` in cms.config.yml. The file is edited as a
+ * YAML document rather than re-serialized, so comments and the rest of the
+ * config survive, and the result is validated before anything is committed.
+ */
+api.put('/config/collections/:collection/fields', withRepo, async (c) => {
+  const body = z.object({ fields: z.array(z.unknown()).min(1) }).safeParse(await c.req.json())
+  if (!body.success) return c.json({ error: 'Invalid body', issues: body.error.issues }, 400)
+
+  const parsedFields = z.array(fieldSchema).safeParse(body.data.fields.map(normalizeField))
+  if (!parsedFields.success) return c.json({ error: 'Invalid fields', issues: parsedFields.error.issues }, 422)
+
+  const git = c.get('git')
+  const file = await git.getFile(CONFIG_PATH)
+  const doc = YAML.parseDocument(file.content)
+  const current = parseConfig(doc.toJS())
+  if (!current.success) return c.json({ error: `${CONFIG_PATH} is invalid`, issues: current.error.issues }, 422)
+
+  const name = c.req.param('collection')
+  const index = current.data.collections.findIndex((x) => x.name === name)
+  if (index < 0) return c.json({ error: 'Unknown collection' }, 404)
+
+  doc.setIn(['collections', index, 'fields'], parsedFields.data.map(fieldToYaml))
+
+  const validated = parseConfig(doc.toJS())
+  if (!validated.success) return c.json({ error: 'The change would make the configuration invalid', issues: validated.error.issues }, 422)
+
+  const r = await git.updateFile({
+    path: CONFIG_PATH,
+    sha: file.sha,
+    content: doc.toString(),
+    message: fieldsCommitMessage(name, current.data.collections[index].fields, parsedFields.data),
+  })
+  const s = c.get('session')
+  await dropCachedConfig(s.token, s.repo!)
+  return c.json({ ok: true, sha: r.sha, fields: parsedFields.data })
 })
 
 // ---------- entries ----------
@@ -133,8 +180,31 @@ const SLUG = /^[A-Za-z0-9][A-Za-z0-9._\-/]*$/
 const validSlug = (s: string) => SLUG.test(s) && !s.includes('..')
 const entryBody = z.object({ data: z.record(z.string(), z.unknown()), body: z.string().default('') })
 
-/** Where an existing entry actually lives — a single file, or a bundle's index file. */
-async function findEntryPath(git: GitProvider, adapter: SiteAdapter, col: Collection, slug: string) {
+/**
+ * Reads an entry from the first of its candidate paths that exists — a single
+ * file, or a bundle's index file.
+ */
+async function readEntry(git: GitProvider, adapter: SiteAdapter, col: Collection, slug: string, ref?: string, claimed?: string) {
+  const trusted = claimed && adapter.pathToSlug(col.folder, claimed, col.extension) === slug ? claimed : null
+  const candidates = trusted ? [trusted] : adapter.entryPaths(col.folder, slug, col.extension)
+  for (const [i, path] of candidates.entries()) {
+    try {
+      return await git.getFile(path, ref)
+    } catch (e) {
+      const last = i === candidates.length - 1
+      if (last || !(e instanceof GitError) || e.status !== 404) throw e
+    }
+  }
+  return null
+}
+
+/**
+ * The path to write for an existing entry. The client sends the path it loaded;
+ * it is only trusted after the adapter maps it back to this slug in this
+ * collection, so it can never point outside the collection folder.
+ */
+async function writePath(git: GitProvider, adapter: SiteAdapter, col: Collection, slug: string, claimed?: string) {
+  if (claimed && adapter.pathToSlug(col.folder, claimed, col.extension) === slug) return claimed
   const candidates = adapter.entryPaths(col.folder, slug, col.extension)
   const existing = new Set((await git.listTree(col.folder)).map((f) => f.path))
   return candidates.find((p) => existing.has(p)) ?? null
@@ -190,9 +260,8 @@ api.get('/entries/:collection/:slug{.+}', collectionOf, async (c) => {
   const slug = c.req.param('slug')
   if (!validSlug(slug)) return c.json({ error: 'Invalid slug' }, 400)
   const adapter = c.get('adapter')
-  const path = await findEntryPath(c.get('git'), adapter, col, slug)
-  if (!path) return c.json({ error: 'Entry not found' }, 404)
-  const f = await c.get('git').getFile(path, c.req.query('ref'))
+  const f = await readEntry(c.get('git'), adapter, col, slug, c.req.query('ref'), c.req.query('path'))
+  if (!f) return c.json({ error: 'Entry not found' }, 404)
   const { data, body } = adapter.parse(f.content)
   const out: EntryDetail = { path: f.path, slug, sha: f.sha, data, body }
   return c.json(out)
@@ -205,6 +274,8 @@ api.post('/entries/:collection', collectionOf, async (c) => {
   if (!p.success) return c.json({ error: 'Invalid body', issues: p.error.issues }, 400)
   const { slug, data, body } = p.data
   if (!validSlug(slug)) return c.json({ error: 'Invalid slug' }, 400)
+  const invalid = validateEntry(col.fields, data, body)
+  if (Object.keys(invalid).length) return c.json({ error: 'Invalid content', fieldErrors: invalid }, 422)
   const adapter = c.get('adapter')
   const [path] = adapter.entryPaths(col.folder, slug, col.extension)
   const r = await c.get('git').createFile({
@@ -220,11 +291,13 @@ api.put('/entries/:collection/:slug{.+}', collectionOf, async (c) => {
   const col = c.get('collection')
   const slug = c.req.param('slug')
   if (!validSlug(slug)) return c.json({ error: 'Invalid slug' }, 400)
-  const p = entryBody.extend({ sha: z.string().min(1) }).safeParse(await c.req.json())
+  const p = entryBody.extend({ sha: z.string().min(1), path: z.string().optional() }).safeParse(await c.req.json())
   if (!p.success) return c.json({ error: 'Invalid body', issues: p.error.issues }, 400)
   const { data, body, sha } = p.data
+  const invalid = validateEntry(col.fields, data, body)
+  if (Object.keys(invalid).length) return c.json({ error: 'Invalid content', fieldErrors: invalid }, 422)
   const adapter = c.get('adapter')
-  const path = await findEntryPath(c.get('git'), adapter, col, slug)
+  const path = await writePath(c.get('git'), adapter, col, slug, p.data.path)
   if (!path) return c.json({ error: 'Entry not found' }, 404)
   const r = await c.get('git').updateFile({
     path,
@@ -240,9 +313,9 @@ api.delete('/entries/:collection/:slug{.+}', collectionOf, async (c) => {
   const col = c.get('collection')
   const slug = c.req.param('slug')
   if (!validSlug(slug)) return c.json({ error: 'Invalid slug' }, 400)
-  const p = z.object({ sha: z.string().min(1), title: z.string().optional() }).safeParse(await c.req.json())
+  const p = z.object({ sha: z.string().min(1), title: z.string().optional(), path: z.string().optional() }).safeParse(await c.req.json())
   if (!p.success) return c.json({ error: 'Invalid body' }, 400)
-  const path = await findEntryPath(c.get('git'), c.get('adapter'), col, slug)
+  const path = await writePath(c.get('git'), c.get('adapter'), col, slug, p.data.path)
   if (!path) return c.json({ error: 'Entry not found' }, 404)
   await c.get('git').deleteFile({
     path,

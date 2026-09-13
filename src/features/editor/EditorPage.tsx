@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Link, useBlocker, useNavigate, useParams } from 'react-router'
+import { Link, useBlocker, useLocation, useNavigate, useParams } from 'react-router'
 import YAML from 'yaml'
 import { ArrowLeft, Eye, History, Trash2, X } from 'lucide-react'
 import { useConfirm } from '@/components/confirm'
@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
-import type { Collection, Field } from '@/core/config'
+import { fieldPanel, isBodyField, type Collection, type Field } from '@/core/config'
 import type { Frontmatter } from '@/core/frontmatter'
 import { slugify } from '@/core/slug'
 import type { Commit, EntryDetail } from '@/core/types'
@@ -18,8 +18,9 @@ import { HistoryPanel } from '@/features/history/HistoryPanel'
 import { api, ApiError } from '@/lib/api'
 import { formatDateTime } from '@/lib/format'
 import { cn } from '@/lib/utils'
+import { validateEntry } from '@/core/validate'
 import { Preview } from './Preview'
-import { isEmpty, widgets } from './widgets'
+import { FieldInput, FieldRow } from './registry'
 
 type Version = { commit: Commit; data: Frontmatter; body: string }
 
@@ -36,9 +37,9 @@ export function EditorPage() {
 function defaults(fields: Field[]): Frontmatter {
   const d: Frontmatter = {}
   for (const f of fields) {
-    if (f.name === 'body') continue
-    if (f.default !== undefined) d[f.name] = f.default
-    else if (f.type === 'datetime') d[f.name] = new Date().toISOString()
+    if (isBodyField(f)) continue
+    if (f.default !== undefined) d[f.id] = f.default
+    else if (f.type === 'datetime' || f.type === 'date') d[f.id] = new Date().toISOString()
   }
   return d
 }
@@ -47,8 +48,10 @@ function Editor({ col, slugParam }: { col: Collection; slugParam?: string }) {
   const isNew = !slugParam
   const navigate = useNavigate()
   const confirm = useConfirm()
+  // Arriving from the list saves the worker a lookup for bundle entries.
+  const knownPath = (useLocation().state as { path?: string } | null)?.path
   const fields = col.fields
-  const hasDraft = fields.some((f) => f.name === 'draft' && f.type === 'boolean')
+  const hasDraft = fields.some((f) => f.id === 'draft' && f.type === 'boolean')
 
   const [entry, setEntry] = useState<EntryDetail | null>(null)
   const [data, setData] = useState<Frontmatter>(() => (isNew ? defaults(fields) : {}))
@@ -66,13 +69,18 @@ function Editor({ col, slugParam }: { col: Collection; slugParam?: string }) {
   const [dirty, setDirtyState] = useState(false)
   const setDirty = (v: boolean) => { dirtyRef.current = v; setDirtyState(v) }
 
-  const entryUrl = (s: string, ref?: string) => `/entries/${col.name}/${s}${ref ? `?ref=${ref}` : ''}`
+  const entryUrl = (s: string, ref?: string, path?: string) => {
+    const q = new URLSearchParams()
+    if (ref) q.set('ref', ref)
+    if (path) q.set('path', path)
+    return `/entries/${col.name}/${s}${q.size ? `?${q}` : ''}`
+  }
 
   async function load() {
     setLoading(true)
     setError(null)
     try {
-      const e = await api<EntryDetail>(entryUrl(slugParam!))
+      const e = await api<EntryDetail>(entryUrl(slugParam!, undefined, knownPath))
       setEntry(e); setData(e.data); setBody(e.body); setSlug(e.slug)
       setDirty(false); setConflict(false); setVersion(null)
     } catch (e) {
@@ -103,17 +111,17 @@ function Editor({ col, slugParam }: { col: Collection; slugParam?: string }) {
   const title = String(shown.data.title ?? '') || slug || `New ${col.label}`
 
   function setField(f: Field, v: unknown) {
-    if (f.name === 'body') setBody(String(v ?? ''))
+    if (isBodyField(f)) setBody(String(v ?? ''))
     else {
       setData((d) => {
         const n = { ...d }
-        if (v === undefined) delete n[f.name]
-        else n[f.name] = v
+        if (v === undefined) delete n[f.id]
+        else n[f.id] = v
         return n
       })
-      if (isNew && f.name === 'title' && !slugTouched) setSlug(slugify(String(v ?? '')))
+      if (isNew && f.id === 'title' && !slugTouched) setSlug(slugify(String(v ?? '')))
     }
-    setFieldErrors((e) => { const { [f.name]: _, ...rest } = e; return rest })
+    setFieldErrors((e) => { const { [f.id]: _, ...rest } = e; return rest })
     setDirty(true)
   }
 
@@ -128,11 +136,7 @@ function Editor({ col, slugParam }: { col: Collection; slugParam?: string }) {
   }
 
   function validate(d: Frontmatter) {
-    const errs: Record<string, string> = {}
-    for (const f of fields) {
-      const v = f.name === 'body' ? body : d[f.name]
-      if (f.required && isEmpty(v)) errs[f.name] = 'Required'
-    }
+    const errs = validateEntry(fields, d, body)
     if (isNew && !slug) errs.slug = 'Required'
     setFieldErrors(errs)
     return Object.keys(errs).length === 0
@@ -143,15 +147,15 @@ function Editor({ col, slugParam }: { col: Collection; slugParam?: string }) {
     if (!validate(merged)) return
     // Write keys in the order the config declares them; unknown keys keep their place at the end.
     const d: Frontmatter = {}
-    for (const f of fields) if (f.name !== 'body' && f.name in merged) d[f.name] = merged[f.name]
+    for (const f of fields) if (!isBodyField(f) && f.id in merged) d[f.id] = merged[f.id]
     for (const k of Object.keys(merged)) if (!(k in d)) d[k] = merged[k]
     setSaving(true); setError(null)
     try {
       let sha = entry?.sha
-      if (force) sha = (await api<EntryDetail>(entryUrl(slug))).sha
+      if (force) sha = (await api<EntryDetail>(entryUrl(slug, undefined, entry?.path))).sha
       const res = isNew
         ? await api<EntryDetail>(`/entries/${col.name}`, { method: 'POST', json: { slug, data: d, body } })
-        : await api<EntryDetail>(entryUrl(slug), { method: 'PUT', json: { data: d, body, sha } })
+        : await api<EntryDetail>(entryUrl(slug), { method: 'PUT', json: { data: d, body, sha, path: entry?.path } })
       setEntry(res); setData(res.data); setDirty(false); setConflict(false)
       if (isNew) navigate(`/content/${col.name}/edit/${res.slug}`, { replace: true })
     } catch (e) {
@@ -173,7 +177,7 @@ function Editor({ col, slugParam }: { col: Collection; slugParam?: string }) {
     if (!ok) return
     setSaving(true)
     try {
-      await api(entryUrl(slug), { method: 'DELETE', json: { sha: entry.sha, title } })
+      await api(entryUrl(slug), { method: 'DELETE', json: { sha: entry.sha, title, path: entry.path } })
       setDirty(false)
       navigate(`/content/${col.name}`)
     } catch (e) {
@@ -183,7 +187,7 @@ function Editor({ col, slugParam }: { col: Collection; slugParam?: string }) {
 
   async function viewVersion(c: Commit | null) {
     if (!c) return setVersion(null)
-    const v = await api<EntryDetail>(entryUrl(slug, c.sha))
+    const v = await api<EntryDetail>(entryUrl(slug, c.sha, entry?.path))
     setVersion({ commit: c, data: v.data, body: v.body })
   }
 
@@ -196,6 +200,16 @@ function Editor({ col, slugParam }: { col: Collection; slugParam?: string }) {
   if (error && !entry && !isNew) return <div className="p-6 text-sm text-destructive">{error}</div>
 
   const status = hasDraft ? (data.draft === true ? 'draft' : 'published') : null
+  const mainFields = fields.filter((f) => fieldPanel(f) === 'main')
+  const sidebarFields = fields.filter((f) => fieldPanel(f) === 'sidebar')
+
+  const renderField = (f: Field) => (
+    <FieldRow key={f.id} field={f} idPrefix={`f-${f.id}`} error={fieldErrors[f.id]}>
+      {(inputId) => (
+        <FieldInput id={inputId} field={f} value={isBodyField(f) ? shown.body : shown.data[f.id]} onChange={(v) => setField(f, v)} />
+      )}
+    </FieldRow>
+  )
 
   return (
     <div className="flex h-full flex-col">
@@ -226,7 +240,7 @@ function Editor({ col, slugParam }: { col: Collection; slugParam?: string }) {
 
       <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
         <div className="min-w-0 flex-1 overflow-y-auto">
-          <div className="mx-auto max-w-3xl space-y-6 p-6">
+          <div className="mx-auto max-w-6xl space-y-6 p-6">
             {conflict && (
               <div className="space-y-2 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm dark:border-amber-700 dark:bg-amber-950">
                 <p className="font-medium">This entry was changed by someone else since you opened it.</p>
@@ -249,25 +263,32 @@ function Editor({ col, slugParam }: { col: Collection; slugParam?: string }) {
 
             <fieldset disabled={!!version || saving} className="space-y-6">
               {isNew && (
-                <FieldRow id="slug" label="Slug" hint={`${col.folder}/${slug || '…'}.${col.extension}`} error={fieldErrors.slug} required>
-                  <Input id="slug" value={slug} onChange={(e) => { setSlug(e.target.value); setSlugTouched(true); setDirty(true) }} className="max-w-md font-mono" />
+                <FieldRow
+                  field={{ id: 'slug', label: 'Slug', type: 'text', required: true, help: `${col.folder}/${slug || '…'}.${col.extension}` }}
+                  idPrefix="slug"
+                  error={fieldErrors.slug}
+                >
+                  {(inputId) => (
+                    <Input id={inputId} value={slug} onChange={(e) => { setSlug(e.target.value); setSlugTouched(true); setDirty(true) }} className="max-w-md font-mono" />
+                  )}
                 </FieldRow>
               )}
-              {fields.map((f) => {
-                const W = widgets[f.type]
-                const value = f.name === 'body' ? shown.body : shown.data[f.name]
-                return (
-                  <FieldRow key={f.name} id={`f-${f.name}`} label={f.label ?? f.name} hint={f.hint} error={fieldErrors[f.name]} required={f.required} inline={f.type === 'boolean'}>
-                    <W id={`f-${f.name}`} field={f} value={value} onChange={(v) => setField(f, v)} />
-                  </FieldRow>
-                )
-              })}
-              <CustomFields
-                key={version?.commit.sha ?? entry?.sha ?? 'new'}
-                data={shown.data}
-                known={new Set(fields.map((f) => f.name))}
-                onChange={setCustom}
-              />
+              <div className="flex flex-col gap-8 xl:flex-row xl:items-start">
+                <div className="min-w-0 flex-1 space-y-6">
+                  {mainFields.map(renderField)}
+                  <CustomFields
+                    key={version?.commit.sha ?? entry?.sha ?? 'new'}
+                    data={shown.data}
+                    known={new Set(fields.map((f) => f.id))}
+                    onChange={setCustom}
+                  />
+                </div>
+                {sidebarFields.length > 0 && (
+                  <aside className="w-full shrink-0 space-y-6 rounded-md border p-4 xl:sticky xl:top-6 xl:w-72">
+                    {sidebarFields.map(renderField)}
+                  </aside>
+                )}
+              </div>
             </fieldset>
           </div>
         </div>
@@ -365,17 +386,3 @@ function CustomField({ name, value, onChange, onRemove }: {
   )
 }
 
-function FieldRow({ id, label, hint, error, required, inline, children }: {
-  id: string; label: string; hint?: string; error?: string; required?: boolean; inline?: boolean; children: React.ReactNode
-}) {
-  return (
-    <div className={cn('space-y-1.5', inline && 'flex items-center gap-3 space-y-0')}>
-      <Label htmlFor={id} className={cn(inline && 'order-2')}>
-        {label}{required && <span className="text-destructive"> *</span>}
-      </Label>
-      {children}
-      {hint && <p className="text-xs text-muted-foreground">{hint}</p>}
-      {error && <p className="text-xs text-destructive">{error}</p>}
-    </div>
-  )
-}

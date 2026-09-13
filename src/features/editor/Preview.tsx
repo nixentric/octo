@@ -1,5 +1,5 @@
 import { marked } from 'marked'
-import type { Field } from '@/core/config'
+import { isBodyField, type Field } from '@/core/config'
 import type { Frontmatter } from '@/core/frontmatter'
 import { useConfig } from '@/features/config/use-config'
 
@@ -9,6 +9,8 @@ img{max-width:100%;height:auto} pre{background:#f4f4f4;padding:.75rem;overflow:a
 dl{display:grid;grid-template-columns:max-content 1fr;gap:.25rem 1rem;font-size:.85rem;color:#555;border-bottom:1px solid #ddd;padding-bottom:1rem;margin-bottom:1.5rem}
 dt{font-weight:600} h1{margin-bottom:.5rem}`
 
+const display = (v: unknown) => (Array.isArray(v) ? v.join(', ') : typeof v === 'object' && v ? JSON.stringify(v) : String(v))
+
 const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!)
 
 export function Preview({ fields, data, body }: { fields: Field[]; data: Frontmatter; body: string }) {
@@ -16,8 +18,8 @@ export function Preview({ fields, data, body }: { fields: Field[]; data: Frontma
   if (!config) return null
 
   const meta = fields
-    .filter((f) => f.name !== 'body' && f.name !== 'title' && data[f.name] != null && data[f.name] !== '')
-    .map((f) => `<dt>${esc(f.label ?? f.name)}</dt><dd>${esc(String(data[f.name]))}</dd>`)
+    .filter((f) => !isBodyField(f) && f.id !== 'title' && data[f.id] != null && data[f.id] !== '')
+    .map((f) => `<dt>${esc(f.label)}</dt><dd>${esc(display(data[f.id]))}</dd>`)
     .join('')
   let html = marked.parse(body, { async: false })
   // Site-public media URLs don't exist until deploy — point them at the CMS raw endpoint.

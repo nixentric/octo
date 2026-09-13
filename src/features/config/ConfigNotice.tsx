@@ -11,23 +11,24 @@ collections:
     label: Posts
     folder: content/posts
     fields:
-      - { name: title, label: Title, type: text, required: true }
-      - { name: description, label: Description, type: textarea }
-      - { name: image, label: Featured Image, type: image }
-      - { name: date, label: Publish Date, type: datetime }
-      - { name: draft, label: Draft, type: boolean }
-      - { name: body, label: Content, type: markdown }`
+      - { id: title, name: Title, type: text, required: true }
+      - { id: description, name: Description, type: textarea }
+      - { id: image, name: Featured Image, type: image }
+      - { id: category, name: Category, type: select, options: [News, Promo, Article] }
+      - { id: date, name: Publish Date, type: datetime }
+      - { id: draft, name: Draft, type: boolean }
+      - { id: body, name: Content, type: markdown }`
 
 export function ConfigNotice() {
   const { error, refetch } = useConfig()
   if (!error) return null
   return (
-    <div className="space-y-3 rounded-md border border-amber-300 bg-amber-50 p-4 text-sm dark:border-amber-700 dark:bg-amber-950">
+    <div className="min-w-0 space-y-3 overflow-hidden rounded-md border border-amber-300 bg-amber-50 p-4 text-sm dark:border-amber-700 dark:bg-amber-950">
       <p className="font-medium">{error.error}</p>
       {error.issues && (
-        <ul className="list-disc pl-5 text-muted-foreground">
+        <ul className="max-h-64 list-disc overflow-y-auto pl-5 text-muted-foreground">
           {error.issues.map((i, n) => (
-            <li key={n}><code>{i.path.join('.') || '(root)'}</code>: {i.message}</li>
+            <li key={n} className="break-words"><code className="break-all">{i.path.join('.') || '(root)'}</code>: {i.message}</li>
           ))}
         </ul>
       )}

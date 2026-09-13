@@ -12,14 +12,19 @@ type MediaItem = FileEntry & { url?: string }
 type MediaResponse = { dir: string; root: string; items: MediaItem[] }
 const isImage = (name: string) => /\.(png|jpe?g|gif|webp|avif|svg)$/i.test(name)
 
-export function MediaPicker({ open, onClose, onPick }: { open: boolean; onClose: () => void; onPick: (url: string) => void }) {
+export function MediaPicker({ open, onClose, onPick, imagesOnly = true }: {
+  open: boolean
+  onClose: () => void
+  onPick: (url: string) => void
+  imagesOnly?: boolean
+}) {
   const [dir, setDir] = useState('')
   const { data, loading, refetch } = useFetch<MediaResponse>(open ? `/media?dir=${encodeURIComponent(dir)}` : null)
   const [busy, setBusy] = useState(false)
   const confirm = useConfirm()
   const fileInput = useRef<HTMLInputElement>(null)
 
-  const items = (data?.items ?? []).filter((i) => i.type === 'dir' || isImage(i.name))
+  const items = (data?.items ?? []).filter((i) => i.type === 'dir' || !imagesOnly || isImage(i.name))
   const parent = data && data.dir !== data.root ? data.dir.split('/').slice(0, -1).join('/') : null
 
   async function upload(file: File) {
@@ -43,12 +48,12 @@ export function MediaPicker({ open, onClose, onPick }: { open: boolean; onClose:
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="max-w-3xl">
         <div className="flex items-center gap-2">
-          <DialogTitle>Choose image</DialogTitle>
+          <DialogTitle>{imagesOnly ? 'Choose image' : 'Choose file'}</DialogTitle>
           <span className="ml-auto text-xs text-muted-foreground">{data?.dir}</span>
           <Button size="sm" variant="outline" disabled={busy} onClick={() => fileInput.current?.click()}>
             <Upload /> {busy ? 'Uploading…' : 'Upload'}
           </Button>
-          <input ref={fileInput} type="file" accept="image/*" hidden onChange={(e) => e.target.files?.[0] && upload(e.target.files[0])} />
+          <input ref={fileInput} type="file" {...(imagesOnly ? { accept: 'image/*' } : {})} hidden onChange={(e) => e.target.files?.[0] && upload(e.target.files[0])} />
         </div>
         <div className="grid max-h-[60vh] grid-cols-3 gap-2 overflow-y-auto sm:grid-cols-4 md:grid-cols-5">
           {parent !== null && (
@@ -63,11 +68,15 @@ export function MediaPicker({ open, onClose, onPick }: { open: boolean; onClose:
               </button>
             ) : (
               <button key={i.path} type="button" className="aspect-square overflow-hidden rounded border hover:ring-2 hover:ring-ring" title={i.name} onClick={() => { onPick(i.url!); onClose() }}>
-                <img src={rawUrl(i.path, i.sha)} alt={i.name} loading="lazy" className="size-full object-cover" />
+                {isImage(i.name) ? (
+                  <img src={rawUrl(i.path, i.sha)} alt={i.name} loading="lazy" className="size-full object-cover" />
+                ) : (
+                  <span className="flex size-full items-center justify-center break-all px-1 text-center text-xs text-muted-foreground">{i.name}</span>
+                )}
               </button>
             ),
           )}
-          {!loading && items.length === 0 && <p className="col-span-full py-8 text-center text-sm text-muted-foreground">No images here.</p>}
+          {!loading && items.length === 0 && <p className="col-span-full py-8 text-center text-sm text-muted-foreground">Nothing here yet.</p>}
         </div>
       </DialogContent>
     </Dialog>

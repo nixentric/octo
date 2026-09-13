@@ -1,4 +1,4 @@
-import { useNavigate } from 'react-router'
+import { Link, useNavigate } from 'react-router'
 import { useConfirm } from '@/components/confirm'
 import { Button } from '@/components/ui/button'
 import { CONFIG_PATH } from '@/core/config'
@@ -51,7 +51,17 @@ export function SettingsPage() {
             <dt className="text-muted-foreground">Media directory</dt><dd><code>{config.media_dir}</code></dd>
             <dt className="text-muted-foreground">Public media path</dt><dd><code>{config.public_media_path}</code></dd>
             <dt className="text-muted-foreground">Collections</dt>
-            <dd>{config.collections.map((c) => <div key={c.name}>{c.label} <span className="text-muted-foreground">· {c.folder}</span></div>)}</dd>
+            <dd className="space-y-1">
+              {config.collections.map((c) => (
+                <div key={c.name} className="flex flex-wrap items-center gap-2">
+                  <span>{c.label}</span>
+                  <span className="text-muted-foreground">· {c.folder}</span>
+                  <Button variant="link" size="sm" className="h-auto p-0" asChild>
+                    <Link to={`/settings/collections/${c.name}`}>{c.fields.length} parameters</Link>
+                  </Button>
+                </div>
+              ))}
+            </dd>
           </dl>
         )}
         <p className="text-xs text-muted-foreground">
