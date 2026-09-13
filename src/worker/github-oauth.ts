@@ -34,13 +34,15 @@ async function tokenRequest(env: Env, params: Record<string, string>): Promise<T
   try {
     data = JSON.parse(body) as TokenResponse
   } catch {
+    console.error('token endpoint returned non-JSON', res.status, body.slice(0, 400))
     // GitHub answers a rejected authorization code with its own 500 error page.
+    const detail = dev() ? ` (GitHub said: ${summarise(body)})` : ''
     return {
       ok: false,
       error:
         res.status === 500
-          ? 'GitHub rejected that sign-in code. It was probably already used — start again from the login screen.'
-          : `GitHub returned an unexpected ${res.status} response. Try signing in again.`,
+          ? `GitHub rejected that sign-in code. It was probably already used — start again from the login screen.${detail}`
+          : `GitHub returned an unexpected ${res.status} response. Try signing in again.${detail}`,
     }
   }
 
@@ -55,6 +57,20 @@ async function tokenRequest(env: Env, params: Record<string, string>): Promise<T
     }
   }
   return { ok: false, error: data.error_description ?? data.error ?? 'GitHub did not return an access token.' }
+}
+
+/** Whatever GitHub's HTML page actually says, for local debugging. */
+function summarise(html: string) {
+  const title = /<title>([^<]*)<\/title>/.exec(html)?.[1]?.trim()
+  return title ? title.replace(/\s*·\s*GitHub$/, '') : `${html.slice(0, 80)}…`
+}
+
+function dev() {
+  try {
+    return import.meta.env?.DEV === true
+  } catch {
+    return false
+  }
 }
 
 export function exchangeCode(env: Env, code: string, redirectUri: string) {
