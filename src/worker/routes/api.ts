@@ -5,7 +5,7 @@ import { z } from 'zod'
 import { adapters, resolveConfig } from '@/adapters'
 import type { SiteAdapter } from '@/adapters/types'
 import { CONFIG_PATH, fieldSchema, normalizeField, parseConfig, type Collection, type ResolvedConfig } from '@/core/config'
-import { fieldsCommitMessage, fieldToYaml } from '@/core/config-write'
+import { fieldsCommitMessage, fieldToYaml, reorderSeq } from '@/core/config-write'
 import { detectCollections, detectSite, inferFields, STARTER_FIELDS } from '@/core/generate-config'
 import { validateEntry } from '@/core/validate'
 import type { EntryDetail, EntrySummary, RepoRef } from '@/core/types'
@@ -287,6 +287,22 @@ api.post('/config/collections', withRepo, async (c) => {
   const collection = { ...body.data, fields: STARTER_FIELDS.map(fieldToYaml) }
   doc.addIn(['collections'], collection)
   return commitConfig(c, doc, file.sha, `cms: add collection "${body.data.name}"`)
+})
+
+/** Sidebar order follows the order in the config file. */
+api.put('/config/collections/order', withRepo, async (c) => {
+  const body = z.object({ names: z.array(z.string()).min(1) }).safeParse(await c.req.json())
+  if (!body.success) return c.json({ error: 'Invalid body', issues: body.error.issues }, 400)
+
+  const { file, doc, parsed } = await configDocument(c.get('git'))
+  if (!parsed.success) return c.json({ error: `${CONFIG_PATH} is invalid`, issues: parsed.error.issues }, 422)
+
+  const current = parsed.data.collections.map((x) => x.name)
+  const ok = reorderSeq(doc.get('collections') as YAML.YAMLSeq, current, body.data.names)
+  if (!ok) {
+    return c.json({ error: 'The new order must list every collection exactly once', collections: current }, 409)
+  }
+  return commitConfig(c, doc, file.sha, 'cms: reorder collections')
 })
 
 api.patch('/config/collections/:collection', withRepo, async (c) => {

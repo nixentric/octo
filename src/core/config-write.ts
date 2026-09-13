@@ -1,3 +1,4 @@
+import type { YAMLSeq } from 'yaml'
 import type { Field } from './config.ts'
 
 /**
@@ -46,4 +47,21 @@ export function fieldsCommitMessage(collection: string, before: Field[], after: 
   }
   if (edits === 0 && reordered) return `cms: reorder fields in ${collection}`
   return `cms: update fields in ${collection}`
+}
+
+/**
+ * Rearranges the collections sequence in place, moving the parsed nodes so each
+ * collection keeps its own formatting and comments. Returns false when the new
+ * order is not a permutation of the current one, which would drop or duplicate
+ * a collection.
+ */
+export function reorderSeq(seq: YAMLSeq, current: string[], next: string[]): boolean {
+  const samePermutation =
+    next.length === current.length &&
+    new Set(next).size === next.length &&
+    next.every((name) => current.includes(name))
+  if (!samePermutation) return false
+
+  seq.items = next.map((name) => seq.items[current.indexOf(name)])
+  return true
 }

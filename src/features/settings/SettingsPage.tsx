@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router'
-import { Plus, SlidersHorizontal, Trash2 } from 'lucide-react'
+import { GripVertical, Link2, Plus, SlidersHorizontal, Trash2 } from 'lucide-react'
 import { useConfirm } from '@/components/confirm'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogFooter, DialogTitle } from '@/components/ui/dialog'
@@ -13,6 +13,8 @@ import { useSession } from '@/features/auth/session'
 import { ConfigNotice } from '@/features/config/ConfigNotice'
 import { useConfig } from '@/features/config/use-config'
 import { api } from '@/lib/api'
+import { move, useDragList } from '@/lib/use-drag-list'
+import { cn } from '@/lib/utils'
 import { FolderInput } from './FolderInput'
 
 type SiteSettings = Pick<ResolvedConfig, 'adapter' | 'content_dir' | 'media_dir' | 'public_media_path'>
@@ -145,7 +147,11 @@ function Field({ id, label, value, onChange, help }: {
   return (
     <div className="space-y-1.5">
       <Label htmlFor={id}>{label}</Label>
-      <Input id={id} value={value} className="font-mono" onChange={(e) => onChange(e.target.value)} />
+      <div className="flex items-center gap-2">
+        {/* A URL prefix, not a repository folder — so it gets an icon but no picker. */}
+        <Link2 className="size-4 shrink-0 text-muted-foreground" />
+        <Input id={id} value={value} className="font-mono" onChange={(e) => onChange(e.target.value)} />
+      </div>
       {help && <p className="text-xs text-muted-foreground">{help}</p>}
     </div>
   )
@@ -159,6 +165,25 @@ function CollectionsSection({ config, onChanged }: { config: ResolvedConfig; onC
   const [error, setError] = useState<string | null>(null)
   const confirm = useConfirm()
   const firstField = useRef<HTMLInputElement>(null)
+  // Dragging reorders locally first so the row follows the cursor, then commits.
+  const [order, setOrder] = useState<Collection[] | null>(null)
+  const collections = order ?? config.collections
+
+  const drag = useDragList(async (from, to) => {
+    const next = move(collections, from, to)
+    setOrder(next)
+    try {
+      await api('/config/collections/order', { method: 'PUT', json: { names: next.map((c) => c.name) } })
+      onChanged()
+    } catch (e) {
+      // Usually means the config moved on elsewhere, so pull the current one back.
+      setOrder(null)
+      onChanged()
+      await confirm({ title: 'Could not save the new order', body: (e as Error).message, alert: true })
+    }
+  })
+
+  useEffect(() => setOrder(null), [config])
 
   async function remove(col: Collection) {
     const ok = await confirm({
@@ -208,13 +233,26 @@ function CollectionsSection({ config, onChanged }: { config: ResolvedConfig; onC
   return (
     <section className="space-y-3">
       <div className="flex items-center justify-between">
-        <h2 className="text-sm font-medium">Collections</h2>
+        <div>
+          <h2 className="text-sm font-medium">Collections</h2>
+          <p className="text-xs text-muted-foreground">Drag to set the order they appear in the sidebar.</p>
+        </div>
         <Button size="sm" variant="outline" onClick={startAdd}><Plus /> Add collection</Button>
       </div>
 
       <ul className="divide-y rounded-md border">
-        {config.collections.map((col) => (
-          <li key={col.name} className="flex flex-wrap items-center gap-2 px-3 py-2 text-sm">
+        {collections.map((col, i) => (
+          <li
+            key={col.name}
+            {...drag.rowProps(i)}
+            className={cn(
+              // No dimming of the source row: the browser already draws a
+              // translucent copy under the cursor, and both at once reads as a glitch.
+              'flex flex-wrap items-center gap-2 bg-background px-3 py-2 text-sm',
+              drag.over === i && drag.from !== i && 'ring-2 ring-ring',
+            )}
+          >
+            <span {...drag.handleProps} className="cursor-grab text-muted-foreground" aria-hidden><GripVertical className="size-4" /></span>
             <button type="button" className="min-w-0 flex-1 text-left" onClick={() => startEdit(col)}>
               <div className="font-medium">{col.label}</div>
               <code className="text-xs text-muted-foreground">{col.folder}</code>

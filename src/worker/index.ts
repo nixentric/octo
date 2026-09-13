@@ -18,8 +18,16 @@ app.onError((err, c) => {
   console.error(err)
   // The message would be an information leak in production, but hiding it
   // locally just means debugging blind.
-  if (import.meta.env.DEV) return c.json({ error: err.message, stack: err.stack }, 500)
-  return c.json({ error: 'Internal error' }, 500)
+  // import.meta.env is not always present in the worker runtime, and an error
+  // handler that throws replaces the real failure with a blank 500.
+  const dev = (() => {
+    try {
+      return import.meta.env?.DEV === true
+    } catch {
+      return false
+    }
+  })()
+  return c.json(dev ? { error: err.message, stack: err.stack } : { error: 'Internal error' }, 500)
 })
 
 app.notFound((c) => c.json({ error: 'Not found' }, 404))

@@ -80,10 +80,11 @@ function Shell() {
       </header>
 
       <div className="flex min-h-0 flex-1">
-        {!hidden && <div className="fixed inset-0 z-10 bg-black/30 md:hidden" onClick={toggle} />}
+        {/* Starts below the header so the toggle it came from stays lit and reachable. */}
+        {!hidden && <div className="fixed inset-x-0 bottom-0 top-12 z-10 bg-black/30 md:hidden" onClick={toggle} />}
         <aside
           className={cn(
-            'fixed inset-y-12 left-0 z-20 w-56 shrink-0 overflow-y-auto border-r bg-sidebar transition-transform md:static',
+            'fixed bottom-0 left-0 top-12 z-20 w-56 shrink-0 overflow-y-auto border-r bg-sidebar transition-transform md:static',
             hidden ? '-translate-x-full md:hidden' : 'translate-x-0',
           )}
         >
