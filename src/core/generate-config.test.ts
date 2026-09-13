@@ -68,3 +68,4 @@ test('widens to a type that fits every sample', () => {
   assert.equal(byId.n.type, 'decimal')
   assert.equal(byId.s.type, 'textarea')
 })
+

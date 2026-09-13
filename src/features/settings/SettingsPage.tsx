@@ -106,13 +106,21 @@ function SiteSection({ config, onSaved }: { config: ResolvedConfig; onSaved: () 
         </div>
         <PickerField id="content_dir" label="Content directory" value={draft.content_dir} onChange={(v) => set({ content_dir: v })} help="Where entry folders live." />
         <PickerField id="media_dir" label="Media directory" value={draft.media_dir} onChange={(v) => set({ media_dir: v })} help="Where uploads are committed." />
-        <Field
-          id="public_media_path"
-          label="Public media path"
-          value={draft.public_media_path}
-          onChange={(v) => set({ public_media_path: v })}
-          help="The URL prefix those files get on the live site."
-        />
+        <div className="space-y-1.5">
+          <Label htmlFor="public_media_path">Public media path</Label>
+          <div className="flex items-center gap-2">
+            {/* No picker: this is the URL the files get on the live site, not a
+                path in the repository, so there is nothing to list. */}
+            <Link2 className="size-4 shrink-0 text-muted-foreground" />
+            <Input
+              id="public_media_path"
+              className="font-mono"
+              value={draft.public_media_path}
+              onChange={(e) => set({ public_media_path: e.target.value })}
+            />
+          </div>
+          <p className="text-xs text-muted-foreground">The URL prefix those files get on the live site.</p>
+        </div>
       </div>
 
       {error && <p className="text-sm text-destructive">{error}</p>}
@@ -137,25 +145,6 @@ function PickerField({ id, label, value, onChange, help }: {
   )
 }
 
-function Field({ id, label, value, onChange, help }: {
-  id: string
-  label: string
-  value: string
-  onChange: (value: string) => void
-  help?: string
-}) {
-  return (
-    <div className="space-y-1.5">
-      <Label htmlFor={id}>{label}</Label>
-      <div className="flex items-center gap-2">
-        {/* A URL prefix, not a repository folder — so it gets an icon but no picker. */}
-        <Link2 className="size-4 shrink-0 text-muted-foreground" />
-        <Input id={id} value={value} className="font-mono" onChange={(e) => onChange(e.target.value)} />
-      </div>
-      {help && <p className="text-xs text-muted-foreground">{help}</p>}
-    </div>
-  )
-}
 
 type Draft = { name: string; label: string; folder: string }
 
@@ -249,7 +238,7 @@ function CollectionsSection({ config, onChanged }: { config: ResolvedConfig; onC
               // No dimming of the source row: the browser already draws a
               // translucent copy under the cursor, and both at once reads as a glitch.
               'flex flex-wrap items-center gap-2 bg-background px-3 py-2 text-sm',
-              drag.over === i && drag.from !== i && 'ring-2 ring-ring',
+              drag.over === i && drag.from !== i && 'relative z-10 ring-2 ring-ring',
             )}
           >
             <span {...drag.handleProps} className="cursor-grab text-muted-foreground" aria-hidden><GripVertical className="size-4" /></span>

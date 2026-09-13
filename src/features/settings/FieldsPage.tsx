@@ -167,7 +167,7 @@ export function FieldsPage() {
             <li
               key={i}
               {...drag.rowProps(i)}
-              className={cn('rounded-md border bg-background', drag.over === i && drag.from !== i && 'ring-2 ring-ring')}
+              className={cn('rounded-md border bg-background', drag.over === i && drag.from !== i && 'relative z-10 ring-2 ring-ring')}
             >
               <div className="flex items-center gap-2 p-2">
                 <span {...drag.handleProps} className="cursor-grab text-muted-foreground" aria-hidden><GripVertical className="size-4" /></span>
@@ -404,7 +404,7 @@ function OptionsEditor({ field, onChange }: { field: Field; onChange: (patch: Pa
           <li
             key={i}
             {...drag.rowProps(i)}
-            className={cn('flex items-center gap-2 bg-background', drag.over === i && drag.from !== i && 'rounded ring-2 ring-ring')}
+            className={cn('flex items-center gap-2 bg-background', drag.over === i && drag.from !== i && 'relative z-10 rounded ring-2 ring-ring')}
           >
             <span {...drag.handleProps} className="cursor-grab text-muted-foreground" aria-hidden><GripVertical className="size-4" /></span>
             <Input value={o.label} placeholder="Label" onChange={(e) => set(i, { label: e.target.value })} />
@@ -444,7 +444,7 @@ function ChildFieldsEditor({ field, onChange }: { field: Field; onChange: (patch
           <li
             key={i}
             {...drag.rowProps(i)}
-            className={cn('flex flex-wrap items-center gap-2 rounded-md border bg-background p-2', drag.over === i && drag.from !== i && 'ring-2 ring-ring')}
+            className={cn('flex flex-wrap items-center gap-2 rounded-md border bg-background p-2', drag.over === i && drag.from !== i && 'relative z-10 ring-2 ring-ring')}
           >
             <span {...drag.handleProps} className="cursor-grab text-muted-foreground" aria-hidden><GripVertical className="size-4" /></span>
             <Input value={child.label} placeholder="Name" className="max-w-40" onChange={(e) => set(i, { label: e.target.value, id: idFrom(e.target.value) || child.id })} />

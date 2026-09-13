@@ -1,4 +1,0 @@
-/Users/nixentric/Documents/Project/octo/README.md
-/Users/nixentric/Documents/Project/octo/index.html
-/Users/nixentric/Documents/Project/octo/pnpm-workspace.yaml
-/Users/nixentric/Documents/Project/octo/public/octo.svg

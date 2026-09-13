@@ -134,3 +134,4 @@ export function detectCollections(paths: string[], contentDir: string, extension
     }))
     .sort((a, b) => b.files.length - a.files.length)
 }
+

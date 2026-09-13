@@ -15,6 +15,7 @@ export function FolderInput({ id, value, onChange, placeholder }: {
   placeholder?: string
 }) {
   const { data } = useFetch<{ folders: string[] }>('/folders')
+  const all = data?.folders ?? []
   const [open, setOpen] = useState(false)
   const [active, setActive] = useState(0)
   // Opening the list shows every folder; typing narrows it. Filtering by the
@@ -23,8 +24,8 @@ export function FolderInput({ id, value, onChange, placeholder }: {
   const inputRef = useRef<HTMLInputElement>(null)
 
   const needle = typed ? value.trim().toLowerCase() : ''
-  const matches = (data?.folders ?? []).filter((f) => f.toLowerCase().includes(needle)).slice(0, 50)
-  const isNew = typed && value.trim() !== '' && !data?.folders.includes(value.trim())
+  const matches = all.filter((f) => f.toLowerCase().includes(needle)).slice(0, 50)
+  const isNew = typed && value.trim() !== '' && !all.includes(value.trim())
 
   const choose = (folder: string) => {
     onChange(folder)

@@ -301,7 +301,7 @@ const ImagesField: FieldComponent = ({ id, value, onChange }) => {
           <li
             key={`${url}-${i}`}
             {...drag.rowProps(i)}
-            className={cn('relative size-24 overflow-hidden rounded border bg-background', drag.over === i && drag.from !== i && 'ring-2 ring-ring')}
+            className={cn('relative size-24 overflow-hidden rounded border bg-background', drag.over === i && drag.from !== i && 'relative z-10 ring-2 ring-ring')}
           >
             {config && <img src={publicToRaw(config, url)} alt="" className="size-full object-cover" />}
             <button
@@ -439,7 +439,7 @@ const RepeaterField: FieldComponent = ({ id, field, value, onChange }) => {
         <div
           key={i}
           {...drag.rowProps(i)}
-          className={cn('space-y-5 rounded-md border bg-background p-4', drag.over === i && drag.from !== i && 'ring-2 ring-ring')}
+          className={cn('space-y-5 rounded-md border bg-background p-4', drag.over === i && drag.from !== i && 'relative z-10 ring-2 ring-ring')}
         >
           <div className="flex items-center gap-2">
             <span {...drag.handleProps} className="cursor-grab text-muted-foreground" aria-hidden><GripVertical className="size-4" /></span>
