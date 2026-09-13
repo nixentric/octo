@@ -105,4 +105,10 @@
   [role="button"]:not(:disabled) {
     cursor: pointer;
   }
+  /* Without this a click flashes a text selection across the button's label. */
+  button,
+  [role="button"],
+  label {
+    user-select: none;
+  }
 }
