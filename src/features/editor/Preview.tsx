@@ -6,7 +6,7 @@ import { useTheme } from '@/lib/theme'
 
 const CSS = `
 :root{color-scheme:light;--fg:#111;--bg:#fff;--muted:#555;--rule:#ddd;--code:#f4f4f4}
-:root.dark{color-scheme:dark;--fg:#fafafa;--bg:#0a0a0a;--muted:#a1a1a1;--rule:#2a2a2a;--code:#1c1c1c}
+:root.dark{color-scheme:dark;--fg:#fafafa;--bg:#000;--muted:#a1a1a1;--rule:#2e2e2e;--code:#161616}
 body{font:16px/1.6 system-ui,sans-serif;color:var(--fg);background:var(--bg);max-width:44rem;margin:2rem auto;padding:0 1rem}
 img{max-width:100%;height:auto} pre{background:var(--code);padding:.75rem;overflow:auto} code{font-size:.9em}
 dl{display:grid;grid-template-columns:max-content 1fr;gap:.25rem 1rem;font-size:.85rem;color:var(--muted);border-bottom:1px solid var(--rule);padding-bottom:1rem;margin-bottom:1.5rem}
