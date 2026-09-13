@@ -25,33 +25,38 @@ export function AppShell() {
 
 function Shell() {
   const { me } = useSession()
-  const [open, setOpen] = useState(false)
-  const [collapsed, setCollapsed] = useState(() => {
+  // One state for both layouts: a side panel on wide screens, an overlay on narrow ones.
+  const [hidden, setHidden] = useState(() => {
     try {
-      return localStorage.getItem('sidebar') === 'collapsed'
+      const saved = localStorage.getItem('sidebar')
+      if (saved) return saved === 'hidden'
     } catch {
-      return false
+      // a browser blocking site data just loses the preference between visits
     }
+    return window.innerWidth < 768
   })
 
   const toggle = () => {
-    setOpen((o) => !o)
-    setCollapsed((c) => {
-      const next = !c
+    setHidden((was) => {
+      const next = !was
       try {
-        localStorage.setItem('sidebar', next ? 'collapsed' : 'expanded')
+        localStorage.setItem('sidebar', next ? 'hidden' : 'shown')
       } catch {
-        // a browser blocking site data just loses the preference between visits
+        // ignored for the same reason as above
       }
       return next
     })
   }
 
+  // Following a link on a narrow screen dismisses the overlay without changing
+  // the remembered preference for wide screens.
+  const dismissOverlay = () => window.innerWidth < 768 && setHidden(true)
+
   return (
     <div className="flex h-screen flex-col">
       <header className="flex h-12 shrink-0 items-center gap-3 border-b px-3">
-        <Button variant="ghost" size="icon" onClick={toggle} aria-label={collapsed ? 'Show menu' : 'Hide menu'}>
-          {collapsed ? <PanelLeftOpen /> : <PanelLeftClose />}
+        <Button variant="ghost" size="icon" onClick={toggle} aria-label={hidden ? 'Show menu' : 'Hide menu'}>
+          {hidden ? <PanelLeftOpen /> : <PanelLeftClose />}
         </Button>
         <NavLink to="/" className="flex items-center gap-2 font-semibold tracking-tight">
           <Logo className="size-5" /> Octo
@@ -75,15 +80,14 @@ function Shell() {
       </header>
 
       <div className="flex min-h-0 flex-1">
-        {open && <div className="fixed inset-0 z-10 bg-black/30 md:hidden" onClick={toggle} />}
+        {!hidden && <div className="fixed inset-0 z-10 bg-black/30 md:hidden" onClick={toggle} />}
         <aside
           className={cn(
             'fixed inset-y-12 left-0 z-20 w-56 shrink-0 overflow-y-auto border-r bg-sidebar transition-transform md:static',
-            open ? 'translate-x-0' : '-translate-x-full',
-            collapsed ? 'md:hidden' : 'md:translate-x-0',
+            hidden ? '-translate-x-full md:hidden' : 'translate-x-0',
           )}
         >
-          <Sidebar onNavigate={() => setOpen(false)} />
+          <Sidebar onNavigate={dismissOverlay} />
         </aside>
         <main className="min-w-0 flex-1 overflow-y-auto">
           <Outlet />

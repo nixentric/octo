@@ -100,7 +100,7 @@ export class GitHubProvider implements GitProvider {
       `${this.base}/git/trees/${encodeURIComponent(this.branch)}?recursive=1`,
     )
     return res.tree
-      .filter((e) => e.type === 'blob' && e.path.startsWith(`${prefix}/`))
+      .filter((e) => e.type === 'blob' && (prefix === '' || e.path.startsWith(`${prefix}/`)))
       .map((e) => ({ path: e.path, sha: e.sha }))
   }
 

@@ -16,6 +16,9 @@ app.onError((err, c) => {
     return c.json({ error: err.message }, status)
   }
   console.error(err)
+  // The message would be an information leak in production, but hiding it
+  // locally just means debugging blind.
+  if (import.meta.env.DEV) return c.json({ error: err.message, stack: err.stack }, 500)
   return c.json({ error: 'Internal error' }, 500)
 })
 

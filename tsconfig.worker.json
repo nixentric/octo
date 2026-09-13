@@ -13,7 +13,8 @@
     "verbatimModuleSyntax": true,
     "noUnusedLocals": true,
     "types": [
-      "@cloudflare/workers-types"
+      "@cloudflare/workers-types",
+      "vite/client"
     ],
     "paths": {
       "@/*": [
