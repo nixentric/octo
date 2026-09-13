@@ -1,4 +1,5 @@
 import { Navigate } from 'react-router'
+import { Logo } from '@/components/Logo'
 import { Button } from '@/components/ui/button'
 import { useSession, Splash } from './session'
 
@@ -17,6 +18,7 @@ export function LoginPage() {
     <div className="flex min-h-screen items-center justify-center p-6">
       <div className="w-full max-w-sm space-y-6">
         <div className="space-y-1">
+          <Logo className="mb-4 size-10" />
           <h1 className="text-2xl font-semibold tracking-tight">Octo CMS</h1>
           <p className="text-sm text-muted-foreground">Manage the content of your site. Changes are saved straight to your repository.</p>
         </div>

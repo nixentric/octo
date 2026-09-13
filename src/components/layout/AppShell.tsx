@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { NavLink, Outlet } from 'react-router'
-import { Check, ChevronsUpDown, FileText, Image, LayoutDashboard, LogOut, Menu, Plus, Settings } from 'lucide-react'
+import { Check, ChevronsUpDown, FileText, Image, LayoutDashboard, LogOut, PanelLeftClose, PanelLeftOpen, Plus, Settings } from 'lucide-react'
+import { Logo } from '@/components/Logo'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger,
@@ -23,14 +24,36 @@ export function AppShell() {
 function Shell() {
   const { me } = useSession()
   const [open, setOpen] = useState(false)
+  const [collapsed, setCollapsed] = useState(() => {
+    try {
+      return localStorage.getItem('sidebar') === 'collapsed'
+    } catch {
+      return false
+    }
+  })
+
+  const toggle = () => {
+    setOpen((o) => !o)
+    setCollapsed((c) => {
+      const next = !c
+      try {
+        localStorage.setItem('sidebar', next ? 'collapsed' : 'expanded')
+      } catch {
+        // a browser blocking site data just loses the preference between visits
+      }
+      return next
+    })
+  }
 
   return (
     <div className="flex h-screen flex-col">
       <header className="flex h-12 shrink-0 items-center gap-3 border-b px-3">
-        <Button variant="ghost" size="icon" className="md:hidden" onClick={() => setOpen((o) => !o)} aria-label="Toggle menu">
-          <Menu />
+        <Button variant="ghost" size="icon" onClick={toggle} aria-label={collapsed ? 'Show menu' : 'Hide menu'}>
+          {collapsed ? <PanelLeftOpen /> : <PanelLeftClose />}
         </Button>
-        <NavLink to="/" className="font-semibold tracking-tight">Octo</NavLink>
+        <NavLink to="/" className="flex items-center gap-2 font-semibold tracking-tight">
+          <Logo className="size-5" /> Octo
+        </NavLink>
         <SiteSwitcher />
         <div className="ml-auto">
           <DropdownMenu>
@@ -50,11 +73,12 @@ function Shell() {
       </header>
 
       <div className="flex min-h-0 flex-1">
-        {open && <div className="fixed inset-0 z-10 bg-black/30 md:hidden" onClick={() => setOpen(false)} />}
+        {open && <div className="fixed inset-0 z-10 bg-black/30 md:hidden" onClick={toggle} />}
         <aside
           className={cn(
-            'fixed inset-y-12 left-0 z-20 w-56 shrink-0 overflow-y-auto border-r bg-sidebar transition-transform md:static md:translate-x-0',
+            'fixed inset-y-12 left-0 z-20 w-56 shrink-0 overflow-y-auto border-r bg-sidebar transition-transform md:static',
             open ? 'translate-x-0' : '-translate-x-full',
+            collapsed ? 'md:hidden' : 'md:translate-x-0',
           )}
         >
           <Sidebar onNavigate={() => setOpen(false)} />
