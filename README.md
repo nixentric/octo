@@ -1,6 +1,6 @@
 # Octo CMS
 
-[![Ko-fi](https://img.shields.io/badge/Ko--fi-Support-FF5E5B?logo=kofi&logoColor=white)](https://ko-fi.com/nixentric)
+<a href="https://ko-fi.com/nixentric"><img src="https://storage.ko-fi.com/cdn/kofi2.png?v=3" alt="Buy me a coffee at ko-fi.com" height="40"></a>
 
 A lightweight Git-based CMS. Content lives in a GitHub repository as Markdown + frontmatter; every save is a commit. No database.
 
