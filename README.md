@@ -1,5 +1,7 @@
 # Octo CMS
 
+[![Ko-fi](https://img.shields.io/badge/Ko--fi-Support-FF5E5B?logo=kofi&logoColor=white)](https://ko-fi.com/nixentric)
+
 A lightweight Git-based CMS. Content lives in a GitHub repository as Markdown + frontmatter; every save is a commit. No database.
 
 ```
@@ -8,16 +10,30 @@ Browser (React) → Cloudflare Worker (/api, /auth) → GitHub API → your repo
 
 ## Running it
 
-**Host your own** — the expected route. Fork this, register your own GitHub App, set your own
+**Use the official instance** — [octo.nixentric.com](https://octo.nixentric.com), run by the maintainer.
+Sign in with GitHub and pick the repository that holds your site.
+
+**Host your own** — the safest route. Fork this, register your own GitHub App, set your own
 secrets, deploy your own Worker. Nothing of yours passes through anyone else's server, and the
 whole setup is the five steps below.
 
-**Use someone else's instance** — also possible without changing a line. Each visitor signs in with
+**Run an instance for others** — possible without changing a line. Each visitor signs in with
 their own GitHub account, and the repository list comes from *their* own installations of that
-instance's GitHub App, so tenants never see each other. Running an instance for other people does
-mean two things: their GitHub tokens are sealed with your `SESSION_SECRET` and therefore readable by
-your Worker, and the GitHub App they install on their repositories is yours to keep working. Set the
-app to **Any account** if you intend to offer this.
+instance's GitHub App, so tenants never see each other. It does mean two things: their GitHub
+tokens are sealed with your `SESSION_SECRET` and therefore readable by your Worker, and the GitHub
+App they install on their repositories is yours to keep working. Set the app to **Any account**,
+then open a pull request to list it under [Community instances](#community-instances).
+
+### Community instances
+
+> [!CAUTION]
+> These are run by other people and not reviewed by this project. Whoever runs an instance owns
+> the GitHub App you install and the Worker your sign-in passes through, so they can read and
+> change every repository you install that app on. Use one only if you trust its operator —
+> hosting your own is safer.
+
+- *None yet.*
+<!-- Add yours as: - [cms.example.com](https://cms.example.com) — run by [@you](https://github.com/you) -->
 
 ## Stack
 
