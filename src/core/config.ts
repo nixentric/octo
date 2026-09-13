@@ -1,7 +1,7 @@
 import { z } from 'zod'
 
 export const WIDGET_TYPES = [
-  'text', 'textarea', 'number', 'boolean', 'select', 'multiselect', 'datetime', 'image', 'markdown',
+  'text', 'textarea', 'number', 'boolean', 'select', 'multiselect', 'tags', 'datetime', 'image', 'markdown',
 ] as const
 export type WidgetType = (typeof WIDGET_TYPES)[number]
 

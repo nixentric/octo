@@ -1,11 +1,13 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link, useBlocker, useNavigate, useParams } from 'react-router'
-import { ArrowLeft, Eye, History, Trash2 } from 'lucide-react'
+import YAML from 'yaml'
+import { ArrowLeft, Eye, History, Trash2, X } from 'lucide-react'
 import { useConfirm } from '@/components/confirm'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Textarea } from '@/components/ui/textarea'
 import type { Collection, Field } from '@/core/config'
 import type { Frontmatter } from '@/core/frontmatter'
 import { slugify } from '@/core/slug'
@@ -112,6 +114,16 @@ function Editor({ col, slugParam }: { col: Collection; slugParam?: string }) {
       if (isNew && f.name === 'title' && !slugTouched) setSlug(slugify(String(v ?? '')))
     }
     setFieldErrors((e) => { const { [f.name]: _, ...rest } = e; return rest })
+    setDirty(true)
+  }
+
+  function setCustom(name: string, v: unknown) {
+    setData((d) => {
+      const n = { ...d }
+      if (v === undefined) delete n[name]
+      else n[name] = v
+      return n
+    })
     setDirty(true)
   }
 
@@ -250,6 +262,12 @@ function Editor({ col, slugParam }: { col: Collection; slugParam?: string }) {
                   </FieldRow>
                 )
               })}
+              <CustomFields
+                key={version?.commit.sha ?? entry?.sha ?? 'new'}
+                data={shown.data}
+                known={new Set(fields.map((f) => f.name))}
+                onChange={setCustom}
+              />
             </fieldset>
           </div>
         </div>
@@ -261,6 +279,88 @@ function Editor({ col, slugParam }: { col: Collection; slugParam?: string }) {
           </aside>
         )}
       </div>
+    </div>
+  )
+}
+
+/** Frontmatter the collection does not describe. Kept on save either way; this makes it visible. */
+function CustomFields({ data, known, onChange }: {
+  data: Frontmatter
+  known: Set<string>
+  onChange: (name: string, value: unknown) => void
+}) {
+  const [newName, setNewName] = useState('')
+  const extras = Object.keys(data).filter((k) => !known.has(k))
+
+  return (
+    <section className="space-y-4 border-t pt-6">
+      <div>
+        <h2 className="text-sm font-medium">Other fields</h2>
+        <p className="text-xs text-muted-foreground">
+          Frontmatter that this collection does not describe. It is preserved whether or not you edit it here.
+        </p>
+      </div>
+
+      {extras.map((name) => (
+        <CustomField key={name} name={name} value={data[name]} onChange={(v) => onChange(name, v)} onRemove={() => onChange(name, undefined)} />
+      ))}
+
+      <form
+        className="flex gap-2"
+        onSubmit={(e) => {
+          e.preventDefault()
+          const name = newName.trim()
+          if (name && !(name in data)) onChange(name, '')
+          setNewName('')
+        }}
+      >
+        <Input value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="field_name" className="max-w-xs font-mono" />
+        <Button type="submit" variant="outline" disabled={!newName.trim()}>Add field</Button>
+      </form>
+    </section>
+  )
+}
+
+function CustomField({ name, value, onChange, onRemove }: {
+  name: string
+  value: unknown
+  onChange: (value: unknown) => void
+  onRemove: () => void
+}) {
+  const structured = value != null && typeof value !== 'string'
+  const [text, setText] = useState(() => (structured ? YAML.stringify(value).trimEnd() : ''))
+  const [invalid, setInvalid] = useState(false)
+
+  return (
+    <div className="space-y-1.5">
+      <div className="flex items-center gap-1">
+        <Label htmlFor={`x-${name}`} className="font-mono text-xs">{name}</Label>
+        <Button type="button" variant="ghost" size="icon" className="size-6" onClick={onRemove} aria-label={`Remove ${name}`}>
+          <X className="size-3" />
+        </Button>
+      </div>
+      {structured ? (
+        <>
+          <Textarea
+            id={`x-${name}`}
+            rows={3}
+            value={text}
+            className="font-mono text-xs"
+            onChange={(e) => {
+              setText(e.target.value)
+              try {
+                onChange(YAML.parse(e.target.value))
+                setInvalid(false)
+              } catch {
+                setInvalid(true)
+              }
+            }}
+          />
+          {invalid && <p className="text-xs text-destructive">Not valid YAML — the last valid value is kept.</p>}
+        </>
+      ) : (
+        <Input id={`x-${name}`} value={String(value ?? '')} onChange={(e) => onChange(e.target.value)} />
+      )}
     </div>
   )
 }

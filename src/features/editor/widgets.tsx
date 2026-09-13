@@ -55,6 +55,56 @@ const MultiSelectWidget: Widget = ({ id, field, value, onChange }) => {
   )
 }
 
+const TagsWidget: Widget = ({ id, field, value, onChange }) => {
+  const tags = Array.isArray(value) ? value.map(String) : value ? [String(value)] : []
+  const [draft, setDraft] = useState('')
+  const listId = `${id}-suggestions`
+
+  const commit = (raw: string) => {
+    const added = raw.split(',').map((t) => t.trim()).filter((t) => t && !tags.includes(t))
+    if (added.length) onChange([...tags, ...added])
+    setDraft('')
+  }
+
+  return (
+    <div className="flex flex-wrap items-center gap-1.5 rounded-md border px-1.5 py-1 focus-within:ring-[3px] focus-within:ring-ring/50">
+      {tags.map((t) => (
+        <span key={t} className="inline-flex items-center gap-1 rounded bg-secondary py-0.5 pl-2 pr-1 text-sm">
+          {t}
+          <button
+            type="button"
+            onClick={() => onChange(tags.filter((x) => x !== t))}
+            aria-label={`Remove ${t}`}
+            className="opacity-50 hover:opacity-100"
+          >
+            <X className="size-3" />
+          </button>
+        </span>
+      ))}
+      <input
+        id={id}
+        list={field.options?.length ? listId : undefined}
+        value={draft}
+        onChange={(e) => (e.target.value.includes(',') ? commit(e.target.value) : setDraft(e.target.value))}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') {
+            e.preventDefault()
+            commit(draft)
+          } else if (e.key === 'Backspace' && !draft && tags.length) {
+            onChange(tags.slice(0, -1))
+          }
+        }}
+        onBlur={() => draft && commit(draft)}
+        placeholder={tags.length ? 'Add…' : 'Type a tag and press Enter'}
+        className="min-w-40 flex-1 bg-transparent px-1 py-0.5 text-sm outline-none"
+      />
+      {field.options?.length ? (
+        <datalist id={listId}>{field.options.map((o) => <option key={o} value={o} />)}</datalist>
+      ) : null}
+    </div>
+  )
+}
+
 const pad = (n: number) => String(n).padStart(2, '0')
 const toLocalInput = (v: unknown) => {
   const d = new Date(str(v))
@@ -104,11 +154,19 @@ const MarkdownWidget: Widget = ({ id, value, onChange }) => {
     }
   }
 
+  // Selecting a line (triple-click) grabs its trailing newline; markers must stay inside it.
+  const splitPadding = (raw: string) => {
+    const lead = /^\s*/.exec(raw)![0]
+    const trail = /\s*$/.exec(raw.slice(lead.length))![0]
+    return { lead, trail, core: raw.slice(lead.length, raw.length - trail.length) }
+  }
+
   const wrap = (before: string, after = before, placeholder = 'text') => {
     const ta = ref.current
     if (!ta) return
-    const selected = ta.value.slice(ta.selectionStart, ta.selectionEnd) || placeholder
-    insert(before + selected + after, before.length, selected.length)
+    const { lead, trail, core } = splitPadding(ta.value.slice(ta.selectionStart, ta.selectionEnd))
+    const text = core || placeholder
+    insert(lead + before + text + after + trail, lead.length + before.length, text.length)
   }
 
   const prefixLines = (prefix: string) => {
@@ -116,8 +174,9 @@ const MarkdownWidget: Widget = ({ id, value, onChange }) => {
     if (!ta) return
     const start = ta.value.lastIndexOf('\n', ta.selectionStart - 1) + 1
     ta.setSelectionRange(start, ta.selectionEnd)
-    const selected = ta.value.slice(start, ta.selectionEnd) || 'text'
-    insert(selected.split('\n').map((line: string) => prefix + line).join('\n'))
+    const { trail, core } = splitPadding(ta.value.slice(start, ta.selectionEnd))
+    const lines = (core || 'text').split('\n').map((line) => prefix + line).join('\n')
+    insert(lines + trail, prefix.length, (core || 'text').length)
   }
 
   const tools = [
@@ -165,6 +224,7 @@ export const widgets: Record<WidgetType, Widget> = {
   boolean: BooleanWidget,
   select: SelectWidget,
   multiselect: MultiSelectWidget,
+  tags: TagsWidget,
   datetime: DatetimeWidget,
   image: ImageWidget,
   markdown: MarkdownWidget,
