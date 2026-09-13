@@ -1,5 +1,5 @@
-import { useState, type ReactNode } from 'react'
-import { ImageIcon, X } from 'lucide-react'
+import { useRef, useState, type ReactNode } from 'react'
+import { Bold, Code, Heading2, ImageIcon, Italic, Link as LinkIcon, List, Quote, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
@@ -88,11 +88,76 @@ const ImageWidget: Widget = ({ id, value, onChange }) => {
   )
 }
 
-const MarkdownWidget: Widget = ({ id, value, onChange }) => (
-  <Textarea id={id} value={str(value)} onChange={(e) => onChange(e.target.value)} className="min-h-[24rem] font-mono text-sm" spellCheck />
-)
+const MarkdownWidget: Widget = ({ id, value, onChange }) => {
+  const ref = useRef<HTMLTextAreaElement>(null)
+  const [picking, setPicking] = useState(false)
 
-// ponytail: markdown widget is a plain textarea; swap for a rich editor here when editors ask for one
+  // execCommand keeps the browser's native undo stack intact, which a manual splice would destroy.
+  const insert = (text: string, selectFrom?: number, selectLen = 0) => {
+    const ta = ref.current
+    if (!ta) return
+    ta.focus()
+    document.execCommand('insertText', false, text)
+    if (selectFrom != null) {
+      const pos = ta.selectionStart - text.length + selectFrom
+      ta.setSelectionRange(pos, pos + selectLen)
+    }
+  }
+
+  const wrap = (before: string, after = before, placeholder = 'text') => {
+    const ta = ref.current
+    if (!ta) return
+    const selected = ta.value.slice(ta.selectionStart, ta.selectionEnd) || placeholder
+    insert(before + selected + after, before.length, selected.length)
+  }
+
+  const prefixLines = (prefix: string) => {
+    const ta = ref.current
+    if (!ta) return
+    const start = ta.value.lastIndexOf('\n', ta.selectionStart - 1) + 1
+    ta.setSelectionRange(start, ta.selectionEnd)
+    const selected = ta.value.slice(start, ta.selectionEnd) || 'text'
+    insert(selected.split('\n').map((line: string) => prefix + line).join('\n'))
+  }
+
+  const tools = [
+    { icon: Bold, label: 'Bold', run: () => wrap('**') },
+    { icon: Italic, label: 'Italic', run: () => wrap('*') },
+    { icon: Heading2, label: 'Heading', run: () => prefixLines('## ') },
+    { icon: LinkIcon, label: 'Link', run: () => wrap('[', '](https://)', 'link text') },
+    { icon: List, label: 'Bullet list', run: () => prefixLines('- ') },
+    { icon: Quote, label: 'Quote', run: () => prefixLines('> ') },
+    { icon: Code, label: 'Code', run: () => wrap('`', '`', 'code') },
+    { icon: ImageIcon, label: 'Insert image', run: () => setPicking(true) },
+  ]
+
+  return (
+    <div className="space-y-1.5">
+      <div className="flex flex-wrap gap-0.5 rounded-md border p-1">
+        {tools.map((t) => (
+          <Button key={t.label} type="button" variant="ghost" size="icon" className="size-8" title={t.label} aria-label={t.label} onClick={t.run}>
+            <t.icon className="size-4" />
+          </Button>
+        ))}
+      </div>
+      <Textarea
+        id={id}
+        ref={ref}
+        value={str(value)}
+        onChange={(e) => onChange(e.target.value)}
+        onKeyDown={(e) => {
+          if (!(e.metaKey || e.ctrlKey)) return
+          if (e.key === 'b') { e.preventDefault(); wrap('**') }
+          if (e.key === 'i') { e.preventDefault(); wrap('*') }
+        }}
+        className="min-h-[24rem] font-mono text-sm"
+        spellCheck
+      />
+      <MediaPicker open={picking} onClose={() => setPicking(false)} onPick={(url) => insert(`![](${url})`, 2, 0)} />
+    </div>
+  )
+}
+
 export const widgets: Record<WidgetType, Widget> = {
   text: TextWidget,
   textarea: TextareaWidget,
