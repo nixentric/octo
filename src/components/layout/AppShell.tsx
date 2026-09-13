@@ -97,7 +97,8 @@ function SiteSwitcher() {
   const { me } = useSession()
   const [open, setOpen] = useState(false)
   const [switching, setSwitching] = useState<string | null>(null)
-  const { data } = useFetch<{ repos: RepoInfo[] }>(open ? '/repos' : null)
+  // Fetched up front, not on open: arriving a frame later resizes the menu.
+  const { data } = useFetch<{ repos: RepoInfo[] }>('/repos')
   const showSkeleton = useDelayed(open && !data)
   const current = me?.repo
 
