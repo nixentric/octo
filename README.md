@@ -108,3 +108,7 @@ src/
 
 The Worker never sends GitHub tokens to the browser: they live inside an AES-GCM encrypted, HttpOnly cookie.
 `worker/providers/git/types.ts` defines the `GitProvider` interface; `github.ts` is the only GitHub-aware code.
+
+## Licence
+
+MIT — see [LICENSE](LICENSE).

@@ -1,6 +1,12 @@
 {
   "name": "octo",
   "private": true,
+  "license": "MIT",
+  "description": "A lightweight Git-based CMS. Content lives in a GitHub repository as Markdown; every save is a commit.",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/nixentric/octo.git"
+  },
   "type": "module",
   "scripts": {
     "dev": "vite",
