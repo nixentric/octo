@@ -28,7 +28,7 @@ export function CollectionPage() {
   const page = Number(params.get('page') ?? 1)
 
   const query = new URLSearchParams({ q, sort, dir, page: String(page) }).toString()
-  const { data, error, loading, refetch } = useFetch<ListResponse>(col ? `/entries/${col.name}?${query}` : null)
+  const { data, error, showLoading, refetch } = useFetch<ListResponse>(col ? `/entries/${col.name}?${query}` : null)
 
   async function remove(e: EntrySummary) {
     if (!col) return
@@ -103,7 +103,7 @@ export function CollectionPage() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {loading && !data && Array.from({ length: 5 }, (_, i) => (
+            {showLoading && !data && Array.from({ length: 5 }, (_, i) => (
               <TableRow key={i}>
                 <TableCell>
                   <Skeleton className="h-4 w-48" />

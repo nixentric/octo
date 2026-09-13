@@ -5,10 +5,10 @@ import { useFetch } from '@/lib/use-fetch'
 import { cn } from '@/lib/utils'
 
 export function HistoryPanel({ path, activeSha, onSelect }: { path: string; activeSha?: string; onSelect: (c: Commit | null) => void }) {
-  const { data, error, loading } = useFetch<Commit[]>(`/history?path=${encodeURIComponent(path)}&limit=50`)
+  const { data, error, showLoading } = useFetch<Commit[]>(`/history?path=${encodeURIComponent(path)}&limit=50`)
   return (
     <div className="text-sm">
-      {loading && (
+      {showLoading && (
         <ul className="divide-y">
           {Array.from({ length: 4 }, (_, i) => (
             <li key={i} className="flex gap-3 px-3 py-2">

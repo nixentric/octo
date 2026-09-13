@@ -29,7 +29,7 @@ export function MediaPage() {
   const [params, setParams] = useSearchParams()
   const confirm = useConfirm()
   const dir = params.get('dir') ?? ''
-  const { data, error, loading, refetch } = useFetch<MediaResponse>(cfgError ? null : `/media?dir=${encodeURIComponent(dir)}`)
+  const { data, error, showLoading, refetch } = useFetch<MediaResponse>(cfgError ? null : `/media?dir=${encodeURIComponent(dir)}`)
   const [view, setView] = useState<'grid' | 'list'>('grid')
   const [q, setQ] = useState('')
   const [preview, setPreview] = useState<MediaItem | null>(null)
@@ -132,7 +132,7 @@ export function MediaPage() {
 
       {busy && <p className="text-sm text-muted-foreground">{busy}</p>}
       {error && <p className="text-sm text-destructive">{error.message}</p>}
-      {loading && !data && (
+      {showLoading && !data && (
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-6">
           {Array.from({ length: 12 }, (_, i) => <Skeleton key={i} className="aspect-square" />)}
         </div>

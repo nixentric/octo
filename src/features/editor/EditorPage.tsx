@@ -18,6 +18,7 @@ import { useConfig } from '@/features/config/use-config'
 import { HistoryPanel } from '@/features/history/HistoryPanel'
 import { api, ApiError } from '@/lib/api'
 import { formatDateTime } from '@/lib/format'
+import { useDelayed } from '@/lib/use-delayed'
 import { cn } from '@/lib/utils'
 import { validateEntry } from '@/core/validate'
 import { Preview } from './Preview'
@@ -60,6 +61,7 @@ function Editor({ col, slugParam }: { col: Collection; slugParam?: string }) {
   const [slug, setSlug] = useState('')
   const [slugTouched, setSlugTouched] = useState(false)
   const [loading, setLoading] = useState(!isNew)
+  const showSkeleton = useDelayed(loading)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [conflict, setConflict] = useState(false)
@@ -197,7 +199,7 @@ function Editor({ col, slugParam }: { col: Collection; slugParam?: string }) {
     setData(version.data); setBody(version.body); setVersion(null); setDirty(true)
   }
 
-  if (loading) return <EditorSkeleton />
+  if (loading) return showSkeleton ? <EditorSkeleton /> : null
   if (error && !entry && !isNew) return <div className="p-6 text-sm text-destructive">{error}</div>
 
   const status = hasDraft ? (data.draft === true ? 'draft' : 'published') : null

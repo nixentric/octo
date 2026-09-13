@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { api, ApiError } from './api'
+import { useDelayed } from './use-delayed'
 
 export function useFetch<T>(path: string | null) {
   const [state, setState] = useState<{ data?: T; error?: ApiError; loading: boolean }>({ loading: !!path })
@@ -20,5 +21,7 @@ export function useFetch<T>(path: string | null) {
   }, [path, tick])
 
   const refetch = useCallback(() => setTick((t) => t + 1), [])
-  return { ...state, refetch }
+  // `loading` drives logic; `showLoading` drives skeletons.
+  const showLoading = useDelayed(state.loading)
+  return { ...state, showLoading, refetch }
 }

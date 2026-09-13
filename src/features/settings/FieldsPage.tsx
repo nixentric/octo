@@ -18,6 +18,7 @@ import { slugify } from '@/core/slug'
 import { ConfigNotice } from '@/features/config/ConfigNotice'
 import { useConfig } from '@/features/config/use-config'
 import { api, ApiError } from '@/lib/api'
+import { useDelayed } from '@/lib/use-delayed'
 import { move, useDragList } from '@/lib/use-drag-list'
 import { cn } from '@/lib/utils'
 
@@ -48,6 +49,7 @@ export function FieldsPage() {
   const [issues, setIssues] = useState<string[]>([])
   const [openIndex, setOpenIndex] = useState<number | null>(null)
   const confirm = useConfirm()
+  const showSkeleton = useDelayed(!col || !rows)
 
   useEffect(() => {
     if (col && rows === null) setRows(col.fields.map((f) => ({ field: f, originalId: f.id })))
@@ -71,6 +73,7 @@ export function FieldsPage() {
 
   if (cfgError) return <div className="p-6"><ConfigNotice /></div>
   if (!col || !rows || !fields) {
+    if (!showSkeleton) return null
     return (
       <div className="mx-auto max-w-3xl space-y-5 p-6">
         <Skeleton className="h-7 w-56" />

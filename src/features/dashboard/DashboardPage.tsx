@@ -34,8 +34,8 @@ export function DashboardPage() {
       </dl>
 
       <div className="grid gap-8 lg:grid-cols-2">
-        <CommitList title="Recent edits" commits={edits} loading={history.loading} empty="No edits made through the CMS yet." />
-        <CommitList title="Recent commits" commits={commits.slice(0, 8)} loading={history.loading} empty="No commits." />
+        <CommitList title="Recent edits" commits={edits} loading={history.showLoading} empty="No edits made through the CMS yet." />
+        <CommitList title="Recent commits" commits={commits.slice(0, 8)} loading={history.showLoading} empty="No commits." />
       </div>
       {history.error && <p className="text-sm text-destructive">{history.error.message}</p>}
     </div>

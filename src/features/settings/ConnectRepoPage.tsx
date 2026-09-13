@@ -15,7 +15,7 @@ type ReposResponse = { repos: RepoInfo[]; installUrl: string }
 export function ConnectRepoPage() {
   const { me, refresh } = useSession()
   const navigate = useNavigate()
-  const { data, error, loading, refetch } = useFetch<ReposResponse>('/repos')
+  const { data, error, showLoading, refetch } = useFetch<ReposResponse>('/repos')
   const [q, setQ] = useState('')
   const [selected, setSelected] = useState<RepoInfo | null>(null)
   const [branch, setBranch] = useState('')
@@ -59,7 +59,7 @@ export function ConnectRepoPage() {
         )}
       </div>
 
-      {loading && (
+      {showLoading && (
         <ul className="divide-y rounded-md border">
           {Array.from({ length: 6 }, (_, i) => (
             <li key={i} className="flex items-center justify-between px-3 py-2.5">

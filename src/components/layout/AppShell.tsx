@@ -10,6 +10,7 @@ import {
 import type { RepoInfo } from '@/core/types'
 import { logout, useSession } from '@/features/auth/session'
 import { api } from '@/lib/api'
+import { useDelayed } from '@/lib/use-delayed'
 import { useFetch } from '@/lib/use-fetch'
 import { ConfigProvider, useConfig } from '@/features/config/use-config'
 import { cn } from '@/lib/utils'
@@ -97,6 +98,7 @@ function SiteSwitcher() {
   const [open, setOpen] = useState(false)
   const [switching, setSwitching] = useState<string | null>(null)
   const { data } = useFetch<{ repos: RepoInfo[] }>(open ? '/repos' : null)
+  const showSkeleton = useDelayed(open && !data)
   const current = me?.repo
 
   async function switchTo(r: RepoInfo) {
@@ -117,7 +119,7 @@ function SiteSwitcher() {
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="max-h-96 w-72 overflow-y-auto">
         <DropdownMenuLabel className="font-normal text-muted-foreground">Sites</DropdownMenuLabel>
-        {!data &&
+        {showSkeleton &&
           Array.from({ length: 3 }, (_, i) => (
             <div key={i} className="flex items-center gap-2 px-2 py-1.5">
               <Skeleton className="size-4" />
