@@ -1,12 +1,14 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "octo",
+  // Pinned so a deploy can never land on another account you happen to belong
+  // to. Forking this? Replace it with your own, from the Cloudflare dashboard.
+  "account_id": "275c07bdbef7a21b5704cdc5ba6f1999",
   "main": "src/worker/index.ts",
   "compatibility_date": "2026-09-01",
   "compatibility_flags": ["nodejs_compat"],
   "workers_dev": true,
-  // Uncomment once nixentric.com is a zone on this Cloudflare account:
-  // "routes": [{ "pattern": "octo.nixentric.com", "custom_domain": true }],
+  "routes": [{ "pattern": "octo.nixentric.com", "custom_domain": true }],
   "assets": {
     "not_found_handling": "single-page-application",
     "run_worker_first": ["/api/*", "/auth/*"]
