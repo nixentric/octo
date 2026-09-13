@@ -1,6 +1,11 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { groupCollections, parseConfig } from './config.ts'
+import { FIELD_TYPE_GROUPS, FIELD_TYPES, groupCollections, isIgnored, parseConfig } from './config.ts'
+
+test('the type picker lists every field type exactly once', () => {
+  const listed = FIELD_TYPE_GROUPS.flatMap((g) => g.types)
+  assert.deepEqual([...listed].sort(), [...FIELD_TYPES].sort())
+})
 import { validateEntry } from './validate.ts'
 
 test('collections sit under their group heading, headings in first-seen order', () => {
@@ -105,4 +110,15 @@ test('optional fields accept being absent or blank', () => {
   ]))
   assert.deepEqual(validateEntry(fields, { title: 'ok' }, ''), {})
   assert.deepEqual(validateEntry(fields, { title: 'ok', subtitle: '' }, ''), {})
+})
+
+test('ignored paths leave out an entry or everything in a folder, not look-alike names', () => {
+  const ignore = ['tools/', 'recent']
+  assert.equal(isIgnored(ignore, 'tools/localsend'), true)
+  assert.equal(isIgnored(ignore, 'recent'), true)
+  assert.equal(isIgnored(ignore, 'recent/old'), true)
+  assert.equal(isIgnored(ignore, 'toolshed'), false)
+  assert.equal(isIgnored(ignore, 'about'), false)
+  assert.equal(isIgnored(['/'], 'about'), false)
+  assert.equal(isIgnored(undefined, 'about'), false)
 })

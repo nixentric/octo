@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { detectCollections, detectSite, inferFields, labelFor, missingCoreFields, STARTER_FIELDS, withCoreFields } from './generate-config.ts'
+import { detectCollections, detectSite, inferFields, labelFor, missingCoreFields, recommendFields, STARTER_FIELDS, withCoreFields } from './generate-config.ts'
 
 test('title, date, draft and body are added to whatever was inferred', () => {
   const inferred = inferFields([{ title: 'A', description: 'x', date: '2026-09-06' }], true)
@@ -78,3 +78,33 @@ test('widens to a type that fits every sample', () => {
   assert.equal(byId.s.type, 'textarea')
 })
 
+
+test('recommends a type from how the samples use each key', () => {
+  const recs = recommendFields(
+    [
+      { status: 'draft', featured: true, parent: 'internet', layout: 'docs', opens: '09:30' },
+      { status: 'published', featured: false, parent: 'internet', layout: 'docs' },
+      { status: 'published', featured: true, parent: 'tools', layout: 'docs', links: ['tools'] },
+      { status: 'draft', parent: 'tools', layout: 'docs', links: ['internet', 'tools'] },
+    ],
+    [{ from: 'data/categories.yaml', label: 'Categories', keys: ['internet', 'tools'] }],
+  )
+  const byId = Object.fromEntries(recs.map((r) => [r.field.id, r]))
+  assert.equal(byId.status.field.type, 'select')
+  assert.deepEqual(byId.status.field.options?.map((o) => o.value), ['draft', 'published'])
+  assert.equal(byId.featured.field.type, 'boolean')
+  assert.equal(byId.featured.uses, 3)
+  assert.equal(byId.parent.field.type, 'select')
+  assert.equal(byId.parent.field.options_from, 'data/categories.yaml')
+  assert.equal(byId.parent.field.options, undefined)
+  assert.equal(byId.parent.habit, 'Always keys from Categories')
+  assert.equal(byId.links.field.type, 'multiselect')
+  assert.equal(byId.layout.field.type, 'text') // one value everywhere is not a choice
+  assert.equal(byId.layout.habit, 'Always “docs”')
+  assert.equal(byId.opens.field.type, 'time')
+})
+
+test('a few samples are not enough to call repeated values a choice', () => {
+  const [rec] = recommendFields([{ kind: 'a' }, { kind: 'b' }, { kind: 'a' }])
+  assert.equal(rec.field.type, 'text')
+})

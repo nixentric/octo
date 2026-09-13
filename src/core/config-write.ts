@@ -12,6 +12,7 @@ export function fieldToYaml(f: Field): Record<string, unknown> {
   if (f.help) out.help = f.help
   if (f.placeholder) out.placeholder = f.placeholder
   if (f.options?.length) out.options = f.options.map((o) => (o.label === o.value ? o.value : { label: o.label, value: o.value }))
+  if (f.options_from) out.options_from = f.options_from
   if (f.min != null) out.min = f.min
   if (f.max != null) out.max = f.max
   if (f.pattern) out.pattern = f.pattern

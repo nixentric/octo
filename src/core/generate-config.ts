@@ -21,6 +21,7 @@ function typeOf(value: unknown): FieldType | null {
   if (/^https?:\/\//.test(s)) return 'url'
   if (/^[^@\s]+@[^@\s]+\.\w+$/.test(s)) return 'email'
   if (/^#[0-9a-fA-F]{3,8}$/.test(s)) return 'color'
+  if (/^([01]\d|2[0-3]):[0-5]\d$/.test(s)) return 'time'
   return s.length > 90 || s.includes('\n') ? 'textarea' : 'text'
 }
 
@@ -69,6 +70,61 @@ export function inferFields(samples: Frontmatter[], hasBody: boolean): Field[] {
   fields.sort((a, b) => Number(b.id === 'title') - Number(a.id === 'title'))
   if (hasBody) fields.push({ id: 'body', label: 'Content', type: 'markdown', required: false })
   return fields
+}
+
+export type Recommendation = {
+  field: Field
+  /** How the samples use the key, which is what decided the type. */
+  habit: string
+  /** How many samples hold a value for it. */
+  uses: number
+}
+
+const HABITS: Partial<Record<FieldType, string>> = {
+  boolean: 'Always true or false',
+  integer: 'Always a whole number',
+  decimal: 'Numbers with decimals',
+  date: 'Always a date',
+  datetime: 'Dates with a time',
+  time: 'Always a time of day',
+  image: 'Always an image path',
+  images: 'Lists of image paths',
+  url: 'Always a web address',
+  email: 'Always an email address',
+  color: 'Always a hex colour',
+  tags: 'Lists of words',
+  textarea: 'Long or multi-line text',
+}
+
+const quoted = (values: string[]) =>
+  values.slice(0, 3).map((v) => `“${v}”`).join(', ') + (values.length > 3 ? ', …' : '')
+
+/**
+ * A parameter for each key, typed from how the samples use it. Unlike inferFields it reads
+ * repetition too, since someone reviews these before they are saved: values that are all keys of a
+ * source (like a data file) pick from it, and a few values that keep coming back make a dropdown.
+ */
+export function recommendFields(samples: Frontmatter[], sources: { from: string; label?: string; keys: string[] }[] = []): Recommendation[] {
+  return inferFields(samples, false).map((field) => {
+    const values = samples.map((s) => s[field.id]).filter((v) => v != null)
+    const uses = values.length
+    const distinct = [...new Set(values.flatMap((v) => (Array.isArray(v) ? v : [v])).map(String))]
+    const { options: _, ...bare } = field
+    const list = field.type === 'tags'
+    const words = field.type === 'text' && values.every((v) => typeof v === 'string')
+
+    const source = (list || words) && distinct.length > 0 && sources.find((s) => distinct.every((v) => s.keys.includes(v)))
+    if (source) {
+      return { field: { ...bare, type: list ? 'multiselect' : 'select', options_from: source.from }, habit: `Always keys from ${source.label ?? source.from}`, uses }
+    }
+    if (words && uses >= 4 && distinct.length >= 2 && distinct.length <= Math.min(10, uses / 2)) {
+      const options = distinct.map((v) => ({ label: v, value: v }))
+      return { field: { ...bare, type: 'select', options }, habit: `Only ${distinct.length} different values: ${quoted(distinct)}`, uses }
+    }
+    const habit = HABITS[field.type]
+      ?? (!words ? 'Mixed kinds of values' : uses < 2 ? 'Short text' : distinct.length === 1 ? `Always ${quoted(distinct)}` : 'Short text that varies')
+    return { field, habit, uses }
+  })
 }
 
 export const STARTER_FIELDS: Field[] = [

@@ -9,6 +9,7 @@ import { LoginPage } from '@/features/auth/LoginPage'
 import { RequireAuth, RequireRepo, SessionProvider } from '@/features/auth/session'
 import { CollectionPage } from '@/features/collections/CollectionPage'
 import { DashboardPage } from '@/features/dashboard/DashboardPage'
+import { DataPage } from '@/features/data/DataPage'
 import { EditorPage } from '@/features/editor/EditorPage'
 import { MediaPage } from '@/features/media/MediaPage'
 import { ConnectRepoPage } from '@/features/settings/ConnectRepoPage'
@@ -29,7 +30,9 @@ const router = createBrowserRouter(
             <Route path="content/:collection/edit/*" element={<EditorPage />} />
             <Route path="media" element={<MediaPage />} />
             <Route path="settings" element={<SettingsPage />} />
-            <Route path="settings/collections/:collection" element={<FieldsPage />} />
+            <Route path="settings/collections/:collection" element={<FieldsPage kind="collection" />} />
+            <Route path="data/:name" element={<DataPage />} />
+            <Route path="settings/data/:name" element={<FieldsPage kind="data" />} />
           </Route>
         </Route>
       </Route>

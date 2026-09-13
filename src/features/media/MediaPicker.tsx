@@ -47,7 +47,8 @@ export function MediaPicker({ open, onClose, onPick, imagesOnly = true }: {
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="max-w-3xl">
-        <div className="flex items-center gap-2">
+        {/* Right padding keeps Upload clear of the dialog's close button in the corner. */}
+        <div className="flex flex-wrap items-center gap-2 pr-8">
           <DialogTitle>{imagesOnly ? 'Choose image' : 'Choose file'}</DialogTitle>
           <span className="ml-auto text-xs text-muted-foreground">{data?.dir}</span>
           <Button size="sm" variant="outline" disabled={busy} onClick={() => fileInput.current?.click()}>

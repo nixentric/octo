@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { NavLink, Outlet } from 'react-router'
-import { Check, ChevronsUpDown, Globe, Image, LaptopMinimal, LayoutDashboard, LogOut, Moon, PanelLeftClose, PanelLeftOpen, Plus, Settings, Sun } from 'lucide-react'
+import { Check, ChevronsUpDown, Globe, Image, LaptopMinimal, LayoutDashboard, LogOut, Moon, MoveVertical, PanelLeftClose, PanelLeftOpen, PanelTopClose, Plus, Settings, Sun } from 'lucide-react'
 import { CollectionIcon } from '@/components/CollectionIcon'
 import { Logo } from '@/components/Logo'
 import { Button } from '@/components/ui/button'
@@ -8,11 +8,12 @@ import { Skeleton } from '@/components/ui/skeleton'
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { DEFAULT_GROUP, groupCollections } from '@/core/config'
+import { DEFAULT_DATA_GROUP, DEFAULT_GROUP, groupCollections } from '@/core/config'
 import type { RepoInfo } from '@/core/types'
 import { logout, useSession } from '@/features/auth/session'
 import { api } from '@/lib/api'
 import { useDelayed } from '@/lib/use-delayed'
+import { setEditorHeaderMode, useEditorHeaderMode, type EditorHeaderMode } from '@/lib/editor-header'
 import { useTheme, type Theme } from '@/lib/theme'
 import { useFetch } from '@/lib/use-fetch'
 import { ConfigProvider, useConfig } from '@/features/config/use-config'
@@ -66,7 +67,7 @@ function Shell() {
           <Logo className="size-5" /> Octo
         </NavLink>
         <SiteSwitcher />
-        <div className="ml-auto flex items-center gap-1">
+        <div className="ml-auto flex shrink-0 items-center gap-1">
           {config?.site_url && (
             <Button variant="ghost" size="sm" asChild>
               <a href={config.site_url} target="_blank" rel="noreferrer" aria-label="View site" title={config.site_url}>
@@ -81,10 +82,12 @@ function Shell() {
                 <span className="hidden sm:inline">{me?.user.login}</span>
               </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-48">
+            <DropdownMenuContent align="end" className="w-60">
               <DropdownMenuLabel className="font-normal text-muted-foreground">{me?.user.name ?? me?.user.login}</DropdownMenuLabel>
               <DropdownMenuSeparator />
               <ThemeItems />
+              <DropdownMenuSeparator />
+              <EditorHeaderItems />
               <DropdownMenuSeparator />
               <DropdownMenuItem onClick={logout}><LogOut /> Sign out</DropdownMenuItem>
             </DropdownMenuContent>
@@ -103,7 +106,8 @@ function Shell() {
         >
           <Sidebar onNavigate={dismissOverlay} />
         </aside>
-        <main className="min-w-0 flex-1 overflow-y-auto">
+        {/* Pages never scroll sideways; anything wide (tables, code) scrolls inside its own box instead. */}
+        <main className="min-w-0 flex-1 overflow-x-hidden overflow-y-auto">
           <Outlet />
         </main>
       </div>
@@ -116,6 +120,26 @@ const THEMES: { value: Theme; label: string; icon: typeof Sun }[] = [
   { value: 'dark', label: 'Dark', icon: Moon },
   { value: 'system', label: 'System', icon: LaptopMinimal },
 ]
+
+const EDITOR_HEADER_MODES: { value: EditorHeaderMode; label: string; icon: typeof Sun }[] = [
+  { value: 'scroll', label: 'Scrolls away', icon: MoveVertical },
+  { value: 'autohide', label: 'Hides while scrolling down', icon: PanelTopClose },
+]
+
+function EditorHeaderItems() {
+  const mode = useEditorHeaderMode()
+  return (
+    <>
+      <DropdownMenuLabel className="font-normal text-muted-foreground">Editor header on phones</DropdownMenuLabel>
+      {EDITOR_HEADER_MODES.map(({ value, label, icon: Icon }) => (
+        <DropdownMenuItem key={value} onSelect={(e) => { e.preventDefault(); setEditorHeaderMode(value) }}>
+          <Icon /> {label}
+          <Check className={cn('ml-auto size-4', mode !== value && 'opacity-0')} />
+        </DropdownMenuItem>
+      ))}
+    </>
+  )
+}
 
 function ThemeItems() {
   const { theme, setTheme } = useTheme()
@@ -151,7 +175,8 @@ function SiteSwitcher() {
   return (
     <DropdownMenu open={open} onOpenChange={setOpen}>
       <DropdownMenuTrigger asChild>
-        <Button variant="ghost" size="sm" className="gap-1.5 text-muted-foreground">
+        {/* The one part of the top bar that gives way, truncating, when a phone is too narrow for all of it. */}
+        <Button variant="ghost" size="sm" className="min-w-0 shrink gap-1.5 text-muted-foreground">
           <span className="max-w-[12rem] truncate sm:max-w-none">{current?.owner}/{current?.name}</span>
           <span className="hidden opacity-50 sm:inline">· {current?.branch}</span>
           <ChevronsUpDown className="size-3.5 opacity-50" />
@@ -200,11 +225,15 @@ function Sidebar({ onNavigate }: { onNavigate: () => void }) {
       <NavLink to="/" end className={item}><LayoutDashboard className="size-4" /> Dashboard</NavLink>
 
       {config ? (
-        groupCollections(config.collections).map((g) => (
+        // Collections and data files share headings: a group named the same holds both.
+        groupCollections([
+          ...config.collections.map((c) => ({ to: `/content/${c.name}`, label: c.label, icon: c.icon, group: c.group })),
+          ...config.data.map((d) => ({ to: `/data/${d.name}`, label: d.label, icon: d.icon ?? 'database', group: d.group?.trim() || DEFAULT_DATA_GROUP })),
+        ]).map((g) => (
           <div key={g.name}>
             <div className="px-2 pb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">{g.name}</div>
             {g.collections.map((c) => (
-              <NavLink key={c.name} to={`/content/${c.name}`} className={item}>
+              <NavLink key={c.to} to={c.to} className={item}>
                 <CollectionIcon name={c.icon} className="size-4" /> {c.label}
               </NavLink>
             ))}

@@ -1,18 +1,24 @@
-import { useRef, useState, type ReactNode } from 'react'
-import { Bold, ChevronDown, Code as CodeIcon, GripVertical, Heading2, ImageIcon, Italic, Link as LinkIcon, List, Plus, Quote, Trash2, X } from 'lucide-react'
+import { lazy, Suspense, useCallback, useContext, useRef, useState, type ReactNode } from 'react'
+import { Link, useParams } from 'react-router'
+import { Bold, ChevronDown, Code as CodeIcon, GripVertical, Heading, ImageIcon, Maximize2, Minimize2, Asterisk, Strikethrough as StrikethroughIcon, Superscript as SuperscriptIcon, Table as TableIcon, TriangleAlert, Italic, Link as LinkIcon, List, Plus, Quote, Trash2, X } from 'lucide-react'
 import { DatePicker } from '@/components/DatePicker'
+import { TimePicker } from '@/components/TimePicker'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Skeleton } from '@/components/ui/skeleton'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
-import type { Field, FieldType } from '@/core/config'
+import { OPTION_TYPES, type Field, type FieldType, type Option } from '@/core/config'
 import { MediaPicker } from '@/features/media/MediaPicker'
+import { FocusMode } from './focus-mode'
+import { CODES, HEADINGS, LISTS, MoreToolsButton, SCRIPTS, ToolMenu, useAllTools, type CodeKind, type HeadingLevel, type ListKind } from './ToolMenu'
 import { publicToRaw } from '@/features/media/MediaPage'
 import { useConfig } from '@/features/config/use-config'
 import { parseDate, toYMD } from '@/lib/calendar'
+import { useFetch } from '@/lib/use-fetch'
 import { move, useDragList } from '@/lib/use-drag-list'
 import { cn } from '@/lib/utils'
 
@@ -111,21 +117,28 @@ const dateField = (withTime: boolean): FieldComponent =>
           onChange={(day) => emit(day && withTime ? at(day, current?.getHours() ?? 0, current?.getMinutes() ?? 0) : day)}
         />
         {withTime && (
-          <Input
-            type="time"
-            aria-label="Time"
-            className="w-28"
+          <TimePicker
             disabled={!current}
-            value={current ? `${pad(current.getHours())}:${pad(current.getMinutes())}` : ''}
-            onChange={(e) => {
-              const [h, m] = e.target.value.split(':').map(Number)
-              if (current && !isNaN(h) && !isNaN(m)) emit(at(current, h, m))
-            }}
+            value={current && { hours: current.getHours(), minutes: current.getMinutes() }}
+            onChange={({ hours, minutes }) => current && emit(at(current, hours, minutes))}
           />
         )}
       </div>
     )
   }
+
+/** A time on its own is stored as HH:mm. */
+const TimeField: FieldComponent = ({ id, value, onChange }) => {
+  const parts = /^(\d{1,2}):(\d{2})/.exec(str(value))
+  return (
+    <TimePicker
+      id={id}
+      value={parts && { hours: Number(parts[1]), minutes: Number(parts[2]) }}
+      onChange={({ hours, minutes }) => onChange(`${pad(hours)}:${pad(minutes)}`)}
+      onClear={() => onChange(undefined)}
+    />
+  )
+}
 
 // ---------- choice ----------
 
@@ -335,7 +348,125 @@ const ImagesField: FieldComponent = ({ id, value, onChange }) => {
 
 // ---------- markdown ----------
 
-const MarkdownField: FieldComponent = ({ id, field, value, onChange }) => {
+const VisualMarkdown = lazy(() => import('./VisualMarkdown'))
+
+/** In focus mode the toolbar floats at the bottom of the screen, out of the text's way. */
+const FLOATING_TOOLBAR = 'fixed inset-x-0 bottom-4 z-30 mx-auto w-fit max-w-[calc(100vw-2rem)] justify-center bg-popover shadow-lg'
+
+type MarkdownMode = 'visual' | 'markdown'
+const MODE_KEY = 'markdown-mode'
+
+/** Formatted text by default, or the Markdown itself; either way the entry stores Markdown. */
+const MarkdownField: FieldComponent = (props) => {
+  const { config } = useConfig()
+  const focus = useContext(FocusMode)
+  const [preferred, setPreferred] = useState<MarkdownMode>(() => {
+    try {
+      return localStorage.getItem(MODE_KEY) === 'markdown' ? 'markdown' : 'visual'
+    } catch {
+      return 'visual'
+    }
+  })
+  // Set when this content has something the visual editor would not write back as it was.
+  const [unsupported, setUnsupported] = useState(false)
+  const mode = preferred === 'visual' && !unsupported ? 'visual' : 'markdown'
+  const markUnsupported = useCallback(() => setUnsupported(true), [])
+  const displaySrc = useCallback((src: string) => (config ? publicToRaw(config, src) : src), [config])
+
+  const choose = (m: MarkdownMode) => {
+    setPreferred(m)
+    setUnsupported(false) // asking for the visual editor again checks the content again
+    try {
+      localStorage.setItem(MODE_KEY, m)
+    } catch {
+      // not remembered between visits
+    }
+  }
+
+  const modes = (
+    <div className="flex items-center gap-1">
+      <div role="group" aria-label="Editor" className="flex rounded-md bg-muted p-0.5 text-xs">
+        {(['visual', 'markdown'] as const).map((m) => (
+          <button
+            key={m}
+            type="button"
+            aria-pressed={mode === m}
+            onClick={() => choose(m)}
+            className={cn('rounded px-2 py-1 font-medium text-muted-foreground', mode === m && 'bg-background text-foreground shadow-xs')}
+          >
+            {m === 'visual' ? 'Visual' : 'Markdown'}
+          </button>
+        ))}
+      </div>
+      {focus && (
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          className="size-8"
+          title={focus.focused ? 'Exit focus mode' : 'Focus mode'}
+          aria-label={focus.focused ? 'Exit focus mode' : 'Focus mode'}
+          aria-pressed={focus.focused}
+          onClick={focus.toggle}
+        >
+          {focus.focused ? <Minimize2 className="size-4" /> : <Maximize2 className="size-4" />}
+        </Button>
+      )}
+    </div>
+  )
+
+  const blocked = unsupported && preferred === 'visual' ? blockerIn(str(props.value)) : null
+
+  return (
+    <div className="space-y-1.5">
+      {/* Above the editor, where it is seen right after asking for the visual editor. */}
+      {unsupported && preferred === 'visual' && (
+        <p className="flex items-start gap-1.5 text-xs text-amber-700 dark:text-amber-400">
+          <TriangleAlert className="mt-px size-3.5 shrink-0" />
+          <span>
+            The visual editor can’t keep {blocked ? <code className="break-all">{blocked}</code> : 'something in this content'} exactly,
+            so it stays in Markdown. Edit or remove that to write here visually.
+          </span>
+        </p>
+      )}
+      {mode === 'visual' ? (
+        <Suspense fallback={<Skeleton className="h-[27rem]" />}>
+          <VisualMarkdown
+            id={props.id}
+            value={str(props.value)}
+            onChange={props.onChange}
+            onUnsupported={markUnsupported}
+            displaySrc={displaySrc}
+            toolbarEnd={modes}
+            // No box in focus mode, just the page, with room at the bottom for the floating toolbar.
+            className={cn(focus?.focused && 'border-transparent bg-transparent shadow-none focus-within:border-transparent focus-within:ring-0 dark:bg-transparent [&_.ProseMirror]:min-h-[calc(100dvh-6rem)] [&_.ProseMirror]:pb-24')}
+            toolbarClassName={cn(focus?.focused && FLOATING_TOOLBAR)}
+          />
+        </Suspense>
+      ) : (
+        <MarkdownSource
+          {...props}
+          toolbarEnd={modes}
+          className={cn(focus?.focused && 'min-h-[calc(100dvh-6rem)] border-transparent bg-transparent pb-24 shadow-none focus-visible:border-transparent focus-visible:ring-0 dark:bg-transparent')}
+          toolbarClassName={cn(focus?.focused && FLOATING_TOOLBAR)}
+        />
+      )}
+
+    </div>
+  )
+}
+
+/** The first shortcode or HTML tag in some Markdown: what most likely keeps it out of the visual editor. */
+const blockerIn = (md: string) => {
+  const found = /\{\{[<%][\s\S]*?[%>]\}\}|<[a-z][\w-]*[^>]*>/i.exec(md)?.[0]
+  return found && found.length > 40 ? `${found.slice(0, 40)}…` : found
+}
+
+const MarkdownSource = ({ id, field, value, onChange, toolbarEnd, className, toolbarClassName }: Parameters<FieldComponent>[0] & {
+  toolbarEnd: ReactNode
+  className?: string
+  toolbarClassName?: string
+}) => {
   const ref = useRef<HTMLTextAreaElement>(null)
   const [picking, setPicking] = useState(false)
 
@@ -366,35 +497,105 @@ const MarkdownField: FieldComponent = ({ id, field, value, onChange }) => {
     insert(lead + before + text + after + trail, lead.length + before.length, text.length)
   }
 
-  const prefixLines = (prefix: string) => {
-    const ta = ref.current
-    if (!ta) return
+  // Selects the whole lines the caret or selection touches, leaving out a trailing newline.
+  const selectLines = (ta: HTMLTextAreaElement) => {
     const start = ta.value.lastIndexOf('\n', ta.selectionStart - 1) + 1
-    ta.setSelectionRange(start, ta.selectionEnd)
-    const { trail, core } = splitPadding(ta.value.slice(start, ta.selectionEnd))
-    const text = core || 'text'
-    insert(text.split('\n').map((line) => prefix + line).join('\n') + trail, prefix.length, text.length)
+    const last = ta.selectionEnd > ta.selectionStart && ta.value[ta.selectionEnd - 1] === '\n' ? ta.selectionEnd - 1 : ta.selectionEnd
+    const end = ta.value.indexOf('\n', last)
+    ta.setSelectionRange(start, end === -1 ? ta.value.length : end)
+    return ta.value.slice(ta.selectionStart, ta.selectionEnd)
   }
 
-  const tools = [
-    { icon: Bold, label: 'Bold', run: () => wrap('**') },
-    { icon: Italic, label: 'Italic', run: () => wrap('*') },
-    { icon: Heading2, label: 'Heading', run: () => prefixLines('## ') },
-    { icon: LinkIcon, label: 'Link', run: () => wrap('[', '](https://)', 'link text') },
-    { icon: List, label: 'Bullet list', run: () => prefixLines('- ') },
-    { icon: Quote, label: 'Quote', run: () => prefixLines('> ') },
-    { icon: CodeIcon, label: 'Code', run: () => wrap('`', '`', 'code') },
-    { icon: ImageIcon, label: 'Insert image', run: () => setPicking(true) },
-  ]
+  const prefixLines = (prefix: string | ((line: number) => string)) => {
+    const ta = ref.current
+    if (!ta) return
+    const text = selectLines(ta) || 'text'
+    const mark = typeof prefix === 'string' ? () => prefix : prefix
+    const lines = text.split('\n')
+    insert(lines.map((line, i) => mark(i) + line).join('\n'), mark(0).length, lines[0].length)
+  }
+  // A table needs blank lines around it to be read as one.
+  const insertTable = () => {
+    const ta = ref.current
+    if (!ta) return
+    const before = ta.value.slice(0, ta.selectionStart)
+    const pad = !before || before.endsWith('\n\n') ? '' : before.endsWith('\n') ? '\n' : '\n\n'
+    insert(`${pad}| Column 1 | Column 2 |\n| --- | --- |\n| Text | Text |\n\n`, pad.length + 2, 'Column 1'.length)
+  }
+  const code = (kind: CodeKind) => {
+    const ta = ref.current
+    if (!ta) return
+    if (kind === 'inline') return wrap('`', '`', 'code')
+    const text = selectLines(ta) || 'code'
+    insert(`\`\`\`\n${text}\n\`\`\``, 4, text.length)
+  }
+  // Swaps whatever list marks the lines have for the chosen kind, or takes them off when they already are that kind.
+  // The mark goes at the caret and the note at the end, with its placeholder selected to type over.
+  const footnote = () => {
+    const ta = ref.current
+    if (!ta) return
+    const label = Math.max(0, ...[...ta.value.matchAll(/\[\^(\d+)\]/g)].map((m) => Number(m[1]))) + 1
+    insert(`[^${label}]`)
+    ta.setSelectionRange(ta.value.length, ta.value.length)
+    const pad = ta.value.endsWith('\n\n') ? '' : ta.value.endsWith('\n') ? '\n' : '\n\n'
+    const note = `[^${label}]: `
+    insert(`${pad}${note}Footnote text`, pad.length + note.length, 'Footnote text'.length)
+  }
+  const listLines = (kind: ListKind) => {
+    const ta = ref.current
+    if (!ta) return
+    const lines = (selectLines(ta) || 'text').split('\n').map((line) => /^(\s*)(?:([-*+] \[[ xX]\] )|([-*+] )|(\d+[.)] ))?(.*)$/.exec(line)!)
+    const kindOf = (m: RegExpExecArray) => (m[2] ? 'task' : m[3] ? 'bullet' : m[4] ? 'ordered' : null)
+    const off = lines.every((m) => kindOf(m) === kind)
+    const mark = (i: number) => (off ? '' : kind === 'ordered' ? `${i + 1}. ` : kind === 'task' ? '- [ ] ' : '- ')
+    const [, indent, , , , text] = lines[0]
+    insert(lines.map((m, i) => m[1] + mark(i) + m[5]).join('\n'), indent.length + mark(0).length, text.length)
+  }
+
+  // Replaces any heading marks already on the lines, so picking another level never stacks them.
+  const headingLines = (level: HeadingLevel) => {
+    const ta = ref.current
+    if (!ta) return
+    const text = selectLines(ta)
+    if (!text && !level) return
+    const prefix = level ? `${'#'.repeat(level)} ` : ''
+    const lines = (text || 'Heading').split('\n').map((line) => line.replace(/^#{1,6}\s+/, ''))
+    insert(lines.map((line) => prefix + line).join('\n'), prefix.length, lines[0].length)
+  }
+
+  const all = useAllTools()
+  const tool = (label: string, Icon: typeof Bold, run: () => void) => (
+    <Button type="button" variant="ghost" size="icon" className="size-8" title={label} aria-label={label} onClick={run}>
+      <Icon className="size-4" />
+    </Button>
+  )
 
   return (
     <div className="space-y-1.5">
-      <div className="flex flex-wrap gap-0.5 rounded-md border p-1">
-        {tools.map((t) => (
-          <Button key={t.label} type="button" variant="ghost" size="icon" className="size-8" title={t.label} aria-label={t.label} onClick={t.run}>
-            <t.icon className="size-4" />
-          </Button>
-        ))}
+      <div className={cn('flex flex-wrap items-center gap-0.5 rounded-md border p-1', toolbarClassName)}>
+        {tool('Bold', Bold, () => wrap('**'))}
+        {tool('Italic', Italic, () => wrap('*'))}
+        <ToolMenu label="Heading" icon={Heading} choices={HEADINGS} onPick={headingLines} />
+        <ToolMenu label="List" icon={List} choices={LISTS} onPick={listLines} />
+        {tool('Link', LinkIcon, () => wrap('[', '](https://)', 'link text'))}
+        {tool('Insert image', ImageIcon, () => setPicking(true))}
+        {all && (
+          <>
+            {tool('Strikethrough', StrikethroughIcon, () => wrap('~~'))}
+            <ToolMenu
+              label="Subscript or superscript"
+              icon={SuperscriptIcon}
+              choices={SCRIPTS}
+              onPick={(kind) => wrap(`<${kind}>`, `</${kind}>`, kind === 'sub' ? '2' : 'n')}
+            />
+            {tool('Quote', Quote, () => prefixLines('> '))}
+            <ToolMenu label="Code" icon={CodeIcon} choices={CODES} onPick={code} />
+            {tool('Insert table', TableIcon, insertTable)}
+            {tool('Footnote', Asterisk, footnote)}
+          </>
+        )}
+        <MoreToolsButton />
+        <div className="ml-auto">{toolbarEnd}</div>
       </div>
       <Textarea
         id={id}
@@ -407,7 +608,7 @@ const MarkdownField: FieldComponent = ({ id, field, value, onChange }) => {
           if (e.key === 'b') { e.preventDefault(); wrap('**') }
           if (e.key === 'i') { e.preventDefault(); wrap('*') }
         }}
-        className="min-h-[24rem] font-mono text-sm"
+        className={cn('min-h-[24rem] font-mono text-sm', className)}
         spellCheck
       />
       <MediaPicker open={picking} imagesOnly onClose={() => setPicking(false)} onPick={(url) => insert(`![](${url})`, 2, 0)} />
@@ -527,7 +728,7 @@ export const registry: Record<FieldType, FieldComponent> = {
   boolean: BooleanField,
   date: dateField(false),
   datetime: dateField(true),
-  time: typed('time', 'max-w-32'),
+  time: TimeField,
   image: mediaField(true),
   images: ImagesField,
   file: mediaField(false),
@@ -542,26 +743,63 @@ export const registry: Record<FieldType, FieldComponent> = {
   key_value: KeyValueField,
 }
 
-export function FieldInput({ id, field, value, onChange }: FieldProps) {
+export function FieldInput(props: FieldProps) {
+  const { field } = props
+  if (field.options_from) return <SourcedOptionsField {...props} />
+  if (OPTION_TYPES.includes(field.type) && !field.options?.length) return <NoOptions value={props.value} />
   const Component = registry[field.type] ?? TextField
-  return <Component id={id} field={field} value={value} onChange={onChange} />
+  return <Component {...props} />
 }
 
-export function FieldRow({ field, idPrefix, error, children }: {
+/** A choice field whose options live in the repository, read before the widget is drawn. */
+function SourcedOptionsField({ id, field, value, onChange }: FieldProps) {
+  const { data, error } = useFetch<{ options: Option[] }>(`/options?from=${encodeURIComponent(field.options_from!)}`)
+  if (error) return <NoOptions value={value} reason={error.message} />
+  if (!data) return <Skeleton className="h-9 w-full max-w-xs" />
+  if (OPTION_TYPES.includes(field.type) && !data.options.length) {
+    return <NoOptions value={value} reason={`Nothing to choose from in ${field.options_from} yet.`} />
+  }
+  const Component = registry[field.type] ?? TextField
+  return <Component id={id} field={{ ...field, options: data.options }} value={value} onChange={onChange} />
+}
+
+/** Stands in for a choice widget that would otherwise open onto an empty list. */
+function NoOptions({ value, reason = 'No options to choose from yet.' }: { value: unknown; reason?: string }) {
+  // Content editors sit under /content/:collection, data file editors under /data/:name.
+  const { collection, name } = useParams()
+  const settings = collection ? `/settings/collections/${collection}` : name ? `/settings/data/${name}` : null
+  const current = list(value).map(String).join(', ')
+  return (
+    <div className="rounded-md border border-dashed px-3 py-2 text-sm text-muted-foreground">
+      {reason}{' '}
+      {settings && (
+        <Link to={settings} className="text-foreground underline underline-offset-2">
+          Set up the options
+        </Link>
+      )}
+      {current && <div className="mt-1 text-xs">Current value: <code>{current}</code></div>}
+    </div>
+  )
+}
+
+export function FieldRow({ field, idPrefix, error, hidden, bare, children }: {
   field: Field
   idPrefix: string
   error?: string
+  hidden?: boolean
+  /** Just the input and its error, without the label and help around it. */
+  bare?: boolean
   children: (inputId: string) => ReactNode
 }) {
   const inline = field.type === 'boolean'
   return (
-    <div className={cn('space-y-1.5', inline && 'flex items-center gap-3 space-y-0')}>
-      <Label htmlFor={idPrefix} className={cn(inline && 'order-2')}>
+    <div hidden={hidden} className={cn('space-y-1.5', inline && 'flex items-center gap-3 space-y-0')}>
+      <Label htmlFor={idPrefix} hidden={bare} className={cn(inline && 'order-2')}>
         {field.label}
         {field.required && <span className="text-destructive"> *</span>}
       </Label>
       {children(idPrefix)}
-      {field.help && <p className="text-xs text-muted-foreground">{field.help}</p>}
+      {field.help && !bare && <p className="text-xs text-muted-foreground">{field.help}</p>}
       {error && <p className="text-xs text-destructive">{error}</p>}
     </div>
   )

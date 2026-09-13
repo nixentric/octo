@@ -2,8 +2,10 @@ import { Hono } from 'hono'
 import type { AppEnv } from '../../env'
 import { getSession } from '../../session'
 import { configRoutes } from './config'
+import { dataRoutes } from './data'
 import { entryRoutes } from './entries'
 import { mediaRoutes } from './media'
+import { optionRoutes } from './options'
 import { repoRoutes } from './repo'
 import { statsRoutes } from './stats'
 
@@ -22,3 +24,5 @@ api.route('/', configRoutes)
 api.route('/', entryRoutes)
 api.route('/', statsRoutes)
 api.route('/', mediaRoutes)
+api.route('/', optionRoutes)
+api.route('/', dataRoutes)

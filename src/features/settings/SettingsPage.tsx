@@ -9,6 +9,8 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { CONFIG_PATH, type Collection, type ResolvedConfig } from '@/core/config'
+import { labelFor } from '@/core/generate-config'
+import { slugify } from '@/core/slug'
 import { useSession } from '@/features/auth/session'
 import { ConfigNotice } from '@/features/config/ConfigNotice'
 import { useConfig } from '@/features/config/use-config'
@@ -16,7 +18,7 @@ import { api } from '@/lib/api'
 import { githubUrl } from '@/lib/github'
 import { move, useDragList } from '@/lib/use-drag-list'
 import { cn } from '@/lib/utils'
-import { CollectionFields, groupOptions, groupToSave, type CollectionDraft } from './CollectionFields'
+import { CollectionFields, DATA_FILE_ICON, DataFileInput, groupOptions, groupToSave, IconPicker, type CollectionDraft } from './CollectionFields'
 import { FolderInput } from './FolderInput'
 
 type SiteSettings = Pick<ResolvedConfig, 'adapter' | 'content_dir' | 'media_dir' | 'public_media_path'> & { site_url: string }
@@ -68,6 +70,7 @@ export function SettingsPage() {
       <ConfigNotice />
       {config && <SiteSection config={config} onSaved={refetch} />}
       {config && <CollectionsSection config={config} onChanged={refetch} />}
+      {config && <DataFilesSection config={config} onChanged={refetch} />}
     </div>
   )
 }
@@ -189,7 +192,7 @@ function PickerField({ id, label, value, onChange, help }: {
   )
 }
 
-const NEW_COLLECTION: CollectionDraft = { name: '', label: '', folder: '', group: '' }
+const NEW_COLLECTION: CollectionDraft = { name: '', label: '', path: '', group: '' }
 
 function CollectionsSection({ config, onChanged }: { config: ResolvedConfig; onChanged: () => void }) {
   const [adding, setAdding] = useState<CollectionDraft | null>(null)
@@ -239,7 +242,8 @@ function CollectionsSection({ config, onChanged }: { config: ResolvedConfig; onC
     setBusy(true)
     setError(null)
     try {
-      await api('/config/collections', { method: 'POST', json: { ...adding, group: groupToSave(adding.group) } })
+      const { path, group, ...rest } = adding
+      await api('/config/collections', { method: 'POST', json: { ...rest, folder: path, group: groupToSave(group, 'collection') } })
       setAdding(null)
       onChanged()
       // Straight on to its page, where its parameters are set up.
@@ -283,7 +287,7 @@ function CollectionsSection({ config, onChanged }: { config: ResolvedConfig; onC
                 </div>
               </div>
               <span className="hidden shrink-0 items-center gap-1.5 text-xs text-muted-foreground sm:flex">
-                <SlidersHorizontal className="size-3.5" /> {col.fields.length} parameters
+                <SlidersHorizontal className="size-3.5" /> {col.fields.length} parameter{col.fields.length === 1 ? '' : 's'}
               </span>
               <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
             </Link>
@@ -312,19 +316,147 @@ function CollectionsSection({ config, onChanged }: { config: ResolvedConfig; onC
               }}
             >
               <CollectionFields
+                kind="collection"
                 draft={adding}
                 isNew
                 contentDir={config.content_dir}
-                groups={groupOptions(collections)}
+                groups={groupOptions(config, 'collection')}
                 nameRef={firstField}
                 onChange={(patch) => setAdding((d) => (d ? { ...d, ...patch } : d))}
               />
               {error && <p className="text-sm text-destructive">{error}</p>}
               <DialogFooter>
                 <Button type="button" variant="outline" onClick={() => setAdding(null)}>Cancel</Button>
-                <Button type="submit" disabled={busy || !adding.label.trim() || !adding.folder.trim()}>
+                <Button type="submit" disabled={busy || !adding.label.trim() || !adding.path.trim()}>
                   {busy ? 'Adding…' : 'Add collection'}
                 </Button>
+              </DialogFooter>
+            </form>
+          )}
+        </DialogContent>
+      </Dialog>
+    </section>
+  )
+}
+
+/** YAML, JSON or TOML files edited like collections: data/platforms.yaml and the like. */
+function DataFilesSection({ config, onChanged }: { config: ResolvedConfig; onChanged: () => void }) {
+  const [adding, setAdding] = useState<{ file: string; label: string; icon?: string } | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const confirm = useConfirm()
+  const navigate = useNavigate()
+  const taken = config.data.map((d) => d.file)
+  // platforms.yaml becomes "Platforms", keyed platforms; a clash with an existing name gets a number.
+  const base = (file: string) => file.split('/').pop()!.replace(/\.[^.]+$/, '')
+  const nameFor = (file: string) => {
+    const root = slugify(base(file)) || 'data'
+    let name = root
+    for (let n = 2; config.data.some((d) => d.name === name); n++) name = `${root}-${n}`
+    return name
+  }
+
+  async function remove(name: string, label: string, file: string) {
+    const ok = await confirm({
+      title: `Remove "${label}" from the CMS?`,
+      body: `${file} stays in your repository as it is; only its entry in the configuration is removed.`,
+      confirmLabel: 'Remove',
+      destructive: true,
+    })
+    if (!ok) return
+    try {
+      await api(`/config/data/${name}`, { method: 'DELETE' })
+      onChanged()
+    } catch (e) {
+      await confirm({ title: 'Could not remove the data file', body: (e as Error).message, alert: true })
+    }
+  }
+
+  async function add() {
+    if (!adding) return
+    setBusy(true)
+    setError(null)
+    const file = adding.file.trim()
+    const name = nameFor(file)
+    try {
+      await api('/config/data', { method: 'POST', json: { name, label: adding.label.trim() || labelFor(base(file)), file, icon: adding.icon } })
+      setAdding(null)
+      onChanged()
+      // Straight to the entries, which is what adding one was for.
+      navigate(`/data/${name}`)
+    } catch (e) {
+      setError((e as Error).message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <section className="space-y-3">
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-sm font-medium">Data files</h2>
+          <p className="text-xs text-muted-foreground">Registries like platforms or pricing, kept as YAML, JSON or TOML in any folder.</p>
+        </div>
+        <Button size="sm" variant="outline" onClick={() => { setError(null); setAdding({ file: '', label: '' }) }}><Plus /> Add data file</Button>
+      </div>
+
+      {config.data.length > 0 ? (
+        <ul className="divide-y rounded-md border">
+          {config.data.map((d) => (
+            <li key={d.name} className="flex items-center gap-2 bg-background px-3 py-2 text-sm">
+              <Link to={`/settings/data/${d.name}`} className="flex min-w-0 flex-1 items-center gap-3 rounded-md px-2 py-1 hover:bg-accent/50">
+                <CollectionIcon name={d.icon ?? DATA_FILE_ICON} className="size-4 shrink-0 text-muted-foreground" />
+                <div className="min-w-0 flex-1">
+                  <div className="font-medium">{d.label}</div>
+                  <div className="truncate text-xs text-muted-foreground">
+                    <code>{d.file}</code>{d.group?.trim() && ` · ${d.group}`}
+                  </div>
+                </div>
+                <span className="hidden shrink-0 items-center gap-1.5 text-xs text-muted-foreground sm:flex">
+                  <SlidersHorizontal className="size-3.5" /> {d.fields.length} parameter{d.fields.length === 1 ? '' : 's'}
+                </span>
+                <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
+              </Link>
+              <Button variant="ghost" size="icon" aria-label={`Remove ${d.label}`} onClick={() => remove(d.name, d.label, d.file)}><Trash2 /></Button>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="rounded-md border border-dashed p-4 text-center text-xs text-muted-foreground">No data files yet.</p>
+      )}
+
+      <Dialog open={!!adding} onOpenChange={(o) => !o && setAdding(null)}>
+        <DialogContent className="max-h-[calc(100dvh-2rem)] max-w-md overflow-y-auto">
+          <DialogTitle>Add a data file</DialogTitle>
+          {adding && (
+            <form
+              className="space-y-4"
+              onSubmit={(e) => {
+                e.preventDefault()
+                add()
+              }}
+            >
+              <div className="space-y-1.5">
+                <Label htmlFor="data-file">File</Label>
+                <DataFileInput
+                  id="data-file"
+                  value={adding.file}
+                  exclude={taken}
+                  onChange={(file) => setAdding((a) => a && { ...a, file, label: a.label || (file.includes('.') ? labelFor(base(file)) : '') })}
+                />
+                <p className="text-xs text-muted-foreground">Its parameters are worked out from the entries already in it, and can be changed afterwards.</p>
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="data-label">Name</Label>
+                <Input id="data-label" value={adding.label} placeholder="Platforms" onChange={(e) => setAdding((a) => a && { ...a, label: e.target.value })} />
+                <p className="text-xs text-muted-foreground">Shown in the sidebar.</p>
+              </div>
+              <IconPicker value={adding.icon} fallback={DATA_FILE_ICON} onChange={(icon) => setAdding((a) => a && { ...a, icon })} />
+              {error && <p className="text-sm text-destructive">{error}</p>}
+              <DialogFooter>
+                <Button type="button" variant="outline" onClick={() => setAdding(null)}>Cancel</Button>
+                <Button type="submit" disabled={busy || !adding.file.trim()}>{busy ? 'Adding…' : 'Add data file'}</Button>
               </DialogFooter>
             </form>
           )}

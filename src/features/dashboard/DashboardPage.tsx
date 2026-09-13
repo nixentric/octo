@@ -36,7 +36,8 @@ export function DashboardPage() {
 
       <ContentStats />
 
-      <div className="grid gap-8 lg:grid-cols-2">
+      {/* grid-cols-1 is minmax(0, 1fr): without it a long commit message widens the column past a phone's screen. */}
+      <div className="grid grid-cols-1 gap-8 lg:grid-cols-2">
         <CommitList title="Recent edits" commits={edits} loading={history.showLoading} empty="No edits made through the CMS yet." />
         <CommitList title="Recent commits" commits={commits.slice(0, 8)} loading={history.showLoading} empty="No commits." />
       </div>

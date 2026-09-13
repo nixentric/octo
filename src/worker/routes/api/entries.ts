@@ -2,7 +2,8 @@ import { Hono } from 'hono'
 import { createMiddleware } from 'hono/factory'
 import { z } from 'zod'
 import type { SiteAdapter } from '@/adapters/types'
-import type { Collection } from '@/core/config'
+import { isIgnored, type Collection } from '@/core/config'
+import { isBundleIndex } from '@/core/slug'
 import { validateEntry } from '@/core/validate'
 import type { EntryDetail, EntrySummary, RepoRef } from '@/core/types'
 import type { AppEnv } from '../../env'
@@ -78,15 +79,20 @@ export async function collectionEntries(
   return entries
 }
 
+/** The entry files in a collection's folder, with the slug each one is edited under, minus the ignored ones. */
+async function entryFiles(git: GitProvider, adapter: SiteAdapter, col: Collection) {
+  return (await git.listTree(col.folder))
+    .map((f) => ({ path: f.path, slug: adapter.pathToSlug(col.folder, f.path, col.extension) }))
+    .filter((f): f is { path: string; slug: string } => f.slug !== null && !isIgnored(col.ignore, f.slug))
+}
+
 async function buildEntries(
   git: GitProvider,
   adapter: SiteAdapter,
   col: Collection,
   contentDir: string,
 ): Promise<EntrySummary[]> {
-  const found = (await git.listTree(col.folder))
-    .map((f) => ({ path: f.path, slug: adapter.pathToSlug(col.folder, f.path, col.extension) }))
-    .filter((f): f is { path: string; slug: string } => f.slug !== null)
+  const found = await entryFiles(git, adapter, col)
   const metas = await git.getFilesWithMeta(found.map((f) => f.path))
   return metas.map((m, i) => {
     const slug = found[i].slug
@@ -103,6 +109,22 @@ async function buildEntries(
     }
   })
 }
+
+entryRoutes.use('/samples/*', withRepo, withConfig)
+
+/** What the entries hold for some keys, so a parameter's type can be recommended from how it is used. */
+entryRoutes.get('/samples/:collection', collectionOf, async (c) => {
+  const keys = (c.req.query('keys') ?? '').split(',').filter(Boolean)
+  const adapter = c.get('adapter')
+  const found = await entryFiles(c.get('git'), adapter, c.get('collection'))
+  // ponytail: reads at most 100 entries, one GraphQL query; a habit shows long before that.
+  const files = await c.get('git').getFilesWithMeta(found.slice(0, 100).map((f) => f.path))
+  const samples = files.map((f) => {
+    const { data } = adapter.parse(f.text ?? '')
+    return Object.fromEntries(keys.filter((k) => k in data).map((k) => [k, data[k]]))
+  })
+  return c.json({ samples })
+})
 
 entryRoutes.get('/entries/:collection', collectionOf, async (c) => {
   let entries = await collectionEntries(c.get('session'), c.get('git'), c.get('adapter'), c.get('collection'), c.get('config').content_dir)
@@ -158,15 +180,35 @@ entryRoutes.put('/entries/:collection/:slug{.+}', collectionOf, async (c) => {
   const col = c.get('collection')
   const slug = c.req.param('slug')
   if (!validSlug(slug)) return c.json({ error: 'Invalid slug' }, 400)
-  const p = entryBody.extend({ sha: z.string().min(1), path: z.string().optional() }).safeParse(await c.req.json())
+  const p = entryBody.extend({ sha: z.string().min(1), path: z.string().optional(), rename: z.string().optional() }).safeParse(await c.req.json())
   if (!p.success) return c.json({ error: 'Invalid body', issues: p.error.issues }, 400)
   const { data, body, sha } = p.data
   const invalid = validateEntry(col.fields, data, body)
   if (Object.keys(invalid).length) return c.json({ error: 'Invalid content', fieldErrors: invalid }, 422)
   const adapter = c.get('adapter')
-  const path = await writePath(c.get('git'), adapter, col, slug, p.data.path)
+  const git = c.get('git')
+  const path = await writePath(git, adapter, col, slug, p.data.path)
   if (!path) return c.json({ error: 'Entry not found' }, 404)
-  const r = await c.get('git').updateFile({
+
+  const rename = p.data.rename && p.data.rename !== slug ? p.data.rename : null
+  if (rename) {
+    if (!validSlug(rename)) return c.json({ error: 'Invalid content', fieldErrors: { slug: 'Use letters, numbers, hyphens, dots or slashes' } }, 422)
+    if (isBundleIndex(path)) return c.json({ error: 'A page bundle keeps its files in its folder, so its slug cannot be changed here yet' }, 422)
+    const taken = (await git.listTree(col.folder)).some((f) => adapter.pathToSlug(col.folder, f.path, col.extension) === rename)
+    if (taken) return c.json({ error: 'Invalid content', fieldErrors: { slug: `“${rename}” is already used by another entry` } }, 422)
+    // Checked up front: once the new file exists, a stale sha would only surface when deleting the old one.
+    if ((await git.getFile(path)).sha !== sha) return c.json({ error: 'The entry changed since it was opened' }, 409)
+    const [target] = adapter.entryPaths(col.folder, rename, col.extension)
+    const message = `cms: rename ${col.name} "${slug}" to "${rename}"`
+    // ponytail: two commits, not one atomic move; if the delete fails the entry exists twice, never zero times.
+    const created = await git.createFile({ path: target, content: adapter.serialize({ data, body }), message })
+    await git.deleteFile({ path, sha, message })
+    await dropCache(c.get('session').token, listingKey(c.get('session').repo!, col.name))
+    const out: EntryDetail = { path: target, slug: rename, sha: created.sha, data, body }
+    return c.json(out)
+  }
+
+  const r = await git.updateFile({
     path,
     sha,
     content: adapter.serialize({ data, body }),

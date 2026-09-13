@@ -103,8 +103,21 @@
   body {
     @apply bg-background text-foreground;
   }
+  /* Anything that reacts to a click shows the hand, including menu items, options, native toggles and
+     the label beside a checkbox or switch (clicking it flips the control). */
   button:not(:disabled),
-  [role="button"]:not(:disabled) {
+  [role="button"]:not(:disabled),
+  [role="menuitem"]:not([data-disabled]),
+  [role="menuitemcheckbox"]:not([data-disabled]),
+  [role="menuitemradio"]:not([data-disabled]),
+  [role="option"]:not([data-disabled]),
+  [role="tab"]:not([data-disabled]),
+  a[href],
+  summary,
+  select:not(:disabled),
+  input:is([type="checkbox"], [type="radio"], [type="file"], [type="color"], [type="range"]):not(:disabled),
+  label:has(~ :is([role="switch"], [role="checkbox"]):not(:disabled)),
+  label:has(input:is([type="checkbox"], [type="radio"]):not(:disabled)) {
     cursor: pointer;
   }
   /* Without this a click flashes a text selection across the button's label. */
@@ -113,4 +126,40 @@
   label {
     user-select: none;
   }
+}
+
+/* Formatted text in the visual Markdown editor. */
+@layer components {
+  .octo-prose { @apply text-sm leading-relaxed; }
+  .octo-prose > * + * { @apply mt-3; }
+  .octo-prose h1 { @apply text-2xl font-semibold; }
+  .octo-prose h2 { @apply mt-6 text-xl font-semibold; }
+  .octo-prose h3 { @apply mt-5 text-lg font-semibold; }
+  .octo-prose h4, .octo-prose h5, .octo-prose h6 { @apply mt-4 font-semibold; }
+  .octo-prose a { @apply underline underline-offset-2; }
+  .octo-prose ul { @apply list-disc pl-6; }
+  .octo-prose ol { @apply list-decimal pl-6; }
+  .octo-prose li > p { @apply my-1; }
+  .octo-prose ul[data-type='taskList'] { @apply list-none pl-1; }
+  .octo-prose ul[data-type='taskList'] li { @apply flex items-start gap-2; }
+  .octo-prose ul[data-type='taskList'] li > label { @apply mt-1.5 flex shrink-0; }
+  .octo-prose ul[data-type='taskList'] li > div { @apply min-w-0 flex-1; }
+  .octo-prose ul[data-type='taskList'] input { @apply size-3.5 accent-primary; }
+  .octo-prose blockquote { @apply border-l-2 pl-4 text-muted-foreground; }
+  .octo-prose code { @apply rounded bg-muted px-1 py-0.5 font-mono text-[0.9em]; }
+  .octo-prose pre { @apply overflow-x-auto rounded-md bg-muted p-3; }
+  .octo-prose pre code { @apply bg-transparent p-0; }
+  .octo-prose img { @apply max-h-80 rounded-md border; }
+  .octo-prose img.ProseMirror-selectednode { @apply ring-2 ring-ring; }
+  .octo-prose hr { @apply my-6 border-border; }
+  .octo-prose .footnote-ref { @apply mx-px cursor-default text-[0.7em] font-medium text-muted-foreground; }
+  .octo-prose .footnote-def { @apply text-xs text-muted-foreground; }
+  .octo-prose .footnote-def::before { content: '[' attr(data-footnote-def) '] '; @apply font-medium; }
+  .octo-prose .ProseMirror-selectednode:not(img) { @apply rounded-sm outline-2 outline-offset-2 outline-ring/60; }
+  .octo-prose .tableWrapper { @apply overflow-x-auto; }
+  .octo-prose table { @apply w-full border-collapse text-sm; }
+  .octo-prose th, .octo-prose td { @apply relative border px-2 py-1 text-left align-top; }
+  .octo-prose th { @apply bg-muted font-semibold; }
+  .octo-prose td > p, .octo-prose th > p { @apply m-0; }
+  .octo-prose .selectedCell::after { content: ''; @apply pointer-events-none absolute inset-0 bg-ring/20; }
 }

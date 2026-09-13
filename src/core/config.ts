@@ -24,6 +24,8 @@ export type FieldType = (typeof FIELD_TYPES)[number]
 export const NESTED_TYPES = ['object', 'repeater'] satisfies FieldType[]
 export const CHOICE_TYPES = ['select', 'multiselect', 'radio', 'checkbox_group', 'tags'] satisfies FieldType[]
 export const MULTI_CHOICE_TYPES = ['multiselect', 'checkbox_group', 'tags'] satisfies FieldType[]
+/** Choice types with nothing to offer until they have options; tags only use them as suggestions. */
+export const OPTION_TYPES: FieldType[] = ['select', 'multiselect', 'radio', 'checkbox_group']
 
 export const FIELD_TYPE_LABELS: Record<FieldType, string> = {
   text: 'Short text', textarea: 'Long text', markdown: 'Markdown',
@@ -35,6 +37,48 @@ export const FIELD_TYPE_LABELS: Record<FieldType, string> = {
   url: 'URL', email: 'Email', slug: 'Slug', color: 'Colour', code: 'Code', hidden: 'Hidden',
   object: 'Group', repeater: 'Repeater', key_value: 'Key / value',
 }
+
+/** What each type is for, shown when picking one. */
+export const FIELD_TYPE_DESCRIPTIONS: Record<FieldType, string> = {
+  text: 'A single line, like a title or a name.',
+  textarea: 'A few plain lines, like a summary.',
+  markdown: 'Formatted writing with headings, links and images.',
+  integer: 'A whole number, like a quantity or a year.',
+  decimal: 'A number with decimals, like a price or a rating.',
+  select: 'Pick one from a list.',
+  multiselect: 'Pick any number from a list.',
+  radio: 'Pick one, with every choice in view.',
+  checkbox_group: 'Tick several, with every choice in view.',
+  tags: 'Free-form labels, typed or picked from suggestions.',
+  boolean: 'On or off, like draft or featured.',
+  date: 'A calendar day.',
+  datetime: 'A day and a time, like a publish date.',
+  time: 'A time of day.',
+  image: 'One image from the media library.',
+  images: 'A gallery of images.',
+  file: 'One file, like a PDF to download.',
+  url: 'A web address.',
+  email: 'An email address.',
+  slug: 'A URL-safe name, like my-first-post.',
+  color: 'A colour, stored as a hex code.',
+  code: 'Code or preformatted text, kept exactly as typed.',
+  hidden: 'Kept in the file but not shown to editors.',
+  object: 'A set of parameters nested under one key.',
+  repeater: 'A list of items that share the same parameters.',
+  key_value: 'Pairs of names and values.',
+}
+
+/** The groups the type picker shows; every type appears in exactly one. */
+export const FIELD_TYPE_GROUPS: { label: string; types: FieldType[] }[] = [
+  { label: 'Text', types: ['text', 'textarea', 'markdown'] },
+  { label: 'Number', types: ['integer', 'decimal'] },
+  { label: 'Choice', types: ['select', 'multiselect', 'radio', 'checkbox_group', 'tags'] },
+  { label: 'Yes or no', types: ['boolean'] },
+  { label: 'Date & time', types: ['date', 'datetime', 'time'] },
+  { label: 'Media', types: ['image', 'images', 'file'] },
+  { label: 'Special', types: ['url', 'email', 'slug', 'color', 'code', 'hidden'] },
+  { label: 'Structured', types: ['object', 'repeater', 'key_value'] },
+]
 
 /** Legacy type names kept working so older config files still load. */
 const TYPE_ALIASES: Record<string, FieldType> = {
@@ -60,6 +104,11 @@ export type Field = {
   help?: string
   placeholder?: string
   options?: Option[]
+  /**
+   * Where the options are read from instead: a data file keyed by slug
+   * (data/platforms.yaml) or a content folder with one page per option (content/categories).
+   */
+  options_from?: string
   /** Children of an object or repeater. */
   fields?: Field[]
   /** Value range for numbers, length for text, selection count for multi-choice. */
@@ -92,6 +141,7 @@ export const fieldSchema: z.ZodType<Field> = z.lazy(() =>
       help: z.string().optional(),
       placeholder: z.string().optional(),
       options: z.array(optionSchema).optional(),
+      options_from: z.string().optional(),
       fields: z.array(fieldSchema).optional(),
       min: z.number().optional(),
       max: z.number().optional(),
@@ -134,6 +184,8 @@ export const collectionSchema = z
     /** Sidebar heading this collection is listed under; without one it goes under "Content". */
     group: z.string().optional(),
     folder: z.string().min(1),
+    /** Entries (by slug) and folders inside `folder` that are left out, e.g. ones another collection lists. */
+    ignore: z.array(z.string()).optional(),
     create: z.boolean().default(true),
     extension: z.string().default('md'),
     fields: z.array(fieldSchema).min(1),
@@ -145,16 +197,41 @@ export const collectionSchema = z
   })
 export type Collection = z.infer<typeof collectionSchema>
 
+/** Whether one of the collection's `ignore` paths leaves this entry out: its own slug, or a folder above it. */
+export const isIgnored = (ignore: string[] | undefined, slug: string) =>
+  !!ignore?.some((path) => {
+    const p = path.replace(/^\/+|\/+$/g, '')
+    return !!p && (slug === p || slug.startsWith(`${p}/`))
+  })
+
+/** A file under data/ edited like a collection: one entry per key, each with these fields. */
+export const dataFileSchema = z
+  .object({
+    name: z.string().regex(/^[a-z0-9_-]+$/),
+    label: z.string(),
+    file: z.string().min(1),
+    icon: z.string().optional(),
+    group: z.string().optional(),
+    fields: z.array(fieldSchema).min(1),
+  })
+  .check((ctx) => {
+    duplicateIds(ctx.value.fields).forEach((id) =>
+      ctx.issues.push({ code: 'custom', input: ctx.value, path: ['fields'], message: `duplicate field id "${id}"` }),
+    )
+  })
+export type DataFile = z.infer<typeof dataFileSchema>
+
 export const DEFAULT_GROUP = 'Content'
+export const DEFAULT_DATA_GROUP = 'Data'
 
 /**
- * Collections under their sidebar headings. Headings keep the order they first appear in, so
+ * Items under their sidebar headings. Headings keep the order they first appear in, so
  * dragging collections in Settings orders the headings too; case is ignored when matching.
  */
-export function groupCollections<T extends { group?: string }>(collections: T[]) {
+export function groupCollections<T extends { group?: string }>(collections: T[], fallback = DEFAULT_GROUP) {
   const groups = new Map<string, { name: string; collections: T[] }>()
   for (const c of collections) {
-    const name = c.group?.trim() || DEFAULT_GROUP
+    const name = c.group?.trim() || fallback
     const key = name.toLowerCase()
     if (!groups.has(key)) groups.set(key, { name, collections: [] })
     groups.get(key)!.collections.push(c)
@@ -171,6 +248,7 @@ export const configSchema = z.object({
   media_dir: z.string().optional(),
   public_media_path: z.string().optional(),
   collections: z.array(collectionSchema).min(1),
+  data: z.array(dataFileSchema).default([]),
 })
 export type CmsConfig = z.infer<typeof configSchema>
 
@@ -214,11 +292,12 @@ const normalizeOption = (o: unknown) =>
 
 export function normalizeConfig(raw: unknown): unknown {
   if (!isRaw(raw) || !Array.isArray(raw.collections)) return raw
+  const withFields = (items: unknown[]) =>
+    items.map((c) => (isRaw(c) && Array.isArray(c.fields) ? { ...c, fields: c.fields.map(normalizeField) } : c))
   return {
     ...raw,
-    collections: raw.collections.map((c) =>
-      isRaw(c) && Array.isArray(c.fields) ? { ...c, fields: c.fields.map(normalizeField) } : c,
-    ),
+    collections: withFields(raw.collections),
+    ...(Array.isArray(raw.data) ? { data: withFields(raw.data) } : {}),
   }
 }
 

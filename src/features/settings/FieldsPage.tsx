@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link, useBlocker, useParams } from 'react-router'
 import { ArrowLeft, ChevronDown, ExternalLink, GripVertical, Plus, Trash2, TriangleAlert } from 'lucide-react'
+import { Combobox } from '@/components/Combobox'
 import { useConfirm } from '@/components/confirm'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -11,7 +12,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import {
-  CHOICE_TYPES, CONFIG_PATH, FIELD_ID, FIELD_TYPE_LABELS, FIELD_TYPES, fieldPanel, MULTI_CHOICE_TYPES, NESTED_TYPES,
+  CHOICE_TYPES, CONFIG_PATH, FIELD_ID, FIELD_TYPE_LABELS, fieldPanel, MULTI_CHOICE_TYPES, NESTED_TYPES, OPTION_TYPES,
   type Field, type FieldType, type Option,
 } from '@/core/config'
 import { missingCoreFields, withCoreFields } from '@/core/generate-config'
@@ -22,12 +23,15 @@ import { useConfig } from '@/features/config/use-config'
 import { api, ApiError } from '@/lib/api'
 import { githubUrl } from '@/lib/github'
 import { useDelayed } from '@/lib/use-delayed'
+import { useFetch } from '@/lib/use-fetch'
 import { move, useDragList } from '@/lib/use-drag-list'
 import { cn } from '@/lib/utils'
-import { CollectionFields, draftOf, groupOptions, groupToSave, type CollectionDraft } from './CollectionFields'
+import { CollectionFields, draftOf, groupOptions, groupToSave, type CollectionDraft, type Kind } from './CollectionFields'
+import { FIELD_TYPE_ICONS, FieldTypePicker } from './FieldTypePicker'
 
-const sameDetails = (a: CollectionDraft, b: CollectionDraft) =>
-  a.label === b.label && a.folder === b.folder && a.icon === b.icon && groupToSave(a.group) === groupToSave(b.group)
+const sameDetails = (a: CollectionDraft, b: CollectionDraft, kind: Kind) =>
+  a.label === b.label && a.path === b.path && a.icon === b.icon && groupToSave(a.group, kind) === groupToSave(b.group, kind) &&
+  String(a.ignore) === String(b.ignore)
 
 const idFrom = (label: string) => slugify(label).replace(/-/g, '_').replace(/^(?=\d)/, 'f_')
 const isChoice = (t: FieldType) => (CHOICE_TYPES as string[]).includes(t)
@@ -36,6 +40,8 @@ const isNumber = (t: FieldType) => t === 'integer' || t === 'decimal'
 const isText = (t: FieldType) => ['text', 'textarea', 'markdown', 'code', 'url', 'email', 'slug'].includes(t)
 
 type Row = { field: Field; originalId?: string }
+/** Something blocking a save, and the parameter (by position) or details section it is about. */
+type Problem = { message: string; field?: number; details?: boolean }
 
 const newField = (existing: Field[]): Field => {
   let id = 'new_field'
@@ -43,12 +49,23 @@ const newField = (existing: Field[]): Field => {
   return { id, label: 'New field', type: 'text', required: false }
 }
 
-/** One page per collection: its name, group, icon and folder, then its parameters, saved together. */
-export function FieldsPage() {
-  const { collection = '' } = useParams()
+/**
+ * One settings page per collection or data file: its name, group, icon and where it lives, then
+ * its parameters, saved together.
+ */
+export function FieldsPage({ kind }: { kind: Kind }) {
+  const params = useParams()
+  const itemName = (kind === 'data' ? params.name : params.collection) ?? ''
+  // Keyed, so moving straight from one item's page to another's starts clean instead of keeping its edits.
+  return <FieldsEditor key={`${kind}:${itemName}`} kind={kind} itemName={itemName} />
+}
+
+function FieldsEditor({ kind, itemName }: { kind: Kind; itemName: string }) {
+  const section = kind === 'data' ? 'data' : 'collections'
+  const noun = kind === 'data' ? 'data file' : 'collection'
   const { me } = useSession()
   const { config, error: cfgError, refetch } = useConfig()
-  const col = config?.collections.find((c) => c.name === collection)
+  const col = kind === 'data' ? config?.data.find((d) => d.name === itemName) : config?.collections.find((c) => c.name === itemName)
 
   // Rows remember the id each field had when loaded, so a rename is still
   // recognised after the list is reordered.
@@ -59,7 +76,9 @@ export function FieldsPage() {
   const [savedDetails, setSavedDetails] = useState<CollectionDraft | null>(null)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [issues, setIssues] = useState<string[]>([])
+  const [issues, setIssues] = useState<Problem[]>([])
+  // Problems are only pointed out once a save is attempted, as on the data entries page.
+  const [tried, setTried] = useState(false)
   const [openIndex, setOpenIndex] = useState<number | null>(null)
   const confirm = useConfirm()
   const showSkeleton = useDelayed(!col || !rows)
@@ -74,7 +93,7 @@ export function FieldsPage() {
 
   const fields = rows?.map((r) => r.field) ?? null
   const fieldsDirty = !!col && !!fields && JSON.stringify(fields) !== JSON.stringify(col.fields)
-  const detailsDirty = !!details && !!savedDetails && !sameDetails(details, savedDetails)
+  const detailsDirty = !!details && !!savedDetails && !sameDetails(details, savedDetails, kind)
   const dirty = fieldsDirty || detailsDirty
 
   const blocker = useBlocker(() => dirty)
@@ -82,11 +101,11 @@ export function FieldsPage() {
     if (blocker.state !== 'blocked') return
     confirm({
       title: 'Leave without saving?',
-      body: 'Your changes to this collection will be lost.',
+      body: `Your changes to this ${noun} will be lost.`,
       confirmLabel: 'Leave',
       destructive: true,
     }).then((ok) => (ok ? blocker.proceed() : blocker.reset()))
-  }, [blocker, confirm])
+  }, [blocker, confirm, noun])
 
   const drag = useDragList((from, to) => setRows((r) => (r ? move(r, from, to) : r)))
 
@@ -112,20 +131,29 @@ export function FieldsPage() {
     )
   }
 
-  const duplicateIds = fields.map((f) => f.id).filter((id, i, all) => all.indexOf(id) !== i)
-  const localErrors = fields.flatMap((f) => {
+  const localErrors: Problem[] = fields.flatMap((f, field) => {
     const problems: string[] = []
     if (!FIELD_ID.test(f.id)) problems.push(`"${f.id || '(empty)'}" is not a valid parameter ID`)
     if (!f.label.trim()) problems.push(`${f.id} needs a name`)
     if (isNested(f.type) && !f.fields?.length) problems.push(`${f.id} is a ${f.type} and needs at least one child`)
-    return problems
+    if (OPTION_TYPES.includes(f.type) && !f.options?.length && !f.options_from?.trim()) {
+      problems.push(`${f.id} needs options: list them, or read them from the repository`)
+    }
+    if (fields.findIndex((x) => x.id === f.id) !== field) problems.push(`Duplicate parameter ID "${f.id}"`)
+    return problems.map((message) => ({ message, field }))
   })
-  const blocking = [...new Set([
-    ...(details.label.trim() ? [] : ['The collection needs a name']),
-    ...(details.folder.trim() ? [] : ['The collection needs a folder']),
+  const blocking: Problem[] = [
+    ...(details.label.trim() ? [] : [{ message: `The ${noun} needs a name`, details: true }]),
+    ...(details.path.trim() ? [] : [{ message: `The ${noun} needs a ${kind === 'data' ? 'file' : 'folder'}`, details: true }]),
     ...localErrors,
-    ...duplicateIds.map((id) => `Duplicate parameter ID "${id}"`),
-  ])]
+  ]
+
+  /** Opens and scrolls to what a problem is about, so the list works as a set of links. */
+  const goTo = (p: Problem) => {
+    if (p.field !== undefined) setOpenIndex(p.field)
+    const id = p.field !== undefined ? `param-${p.field}` : 'details'
+    requestAnimationFrame(() => document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' }))
+  }
 
   const update = (index: number, patch: Partial<Field>) =>
     setRows((all) => all!.map((r, i) => (i === index ? { ...r, field: { ...r.field, ...patch } } : r)))
@@ -142,6 +170,8 @@ export function FieldsPage() {
   }
 
   async function save() {
+    setTried(true)
+    if (blocking.length) return goTo(blocking[0])
     setSaving(true)
     setError(null)
     setIssues([])
@@ -149,23 +179,28 @@ export function FieldsPage() {
       // One button, but two writes when both parts changed: each re-reads the config file, so the second builds on the first.
       if (detailsDirty) {
         const d = details!
-        await api(`/config/collections/${col!.name}`, {
+        await api(`/config/${section}/${col!.name}`, {
           method: 'PATCH',
-          json: { label: d.label, folder: d.folder, icon: d.icon, group: groupToSave(d.group) },
+          json: { label: d.label, [kind === 'data' ? 'file' : 'folder']: d.path, icon: d.icon, group: groupToSave(d.group, kind), ignore: d.ignore },
         })
         setSavedDetails(d)
       }
       if (fieldsDirty) {
         // Adopt what the server stored rather than clearing: the config fetch is
         // still in flight, and falling back to it would show the pre-save schema.
-        const saved = await api<{ fields: Field[] }>(`/config/collections/${col!.name}/fields`, { method: 'PUT', json: { fields } })
+        const saved = await api<{ fields: Field[] }>(`/config/${section}/${col!.name}/fields`, { method: 'PUT', json: { fields } })
         setRows(saved.fields.map((f) => ({ field: f, originalId: f.id })))
       }
+      setTried(false)
       refetch()
     } catch (e) {
       setError((e as Error).message)
       const body = (e as ApiError).body as { issues?: { path: (string | number)[]; message: string }[] } | undefined
-      setIssues((body?.issues ?? []).map((i) => `${i.path.join('.')}: ${i.message}`))
+      // A path starting with a number points at that parameter.
+      setIssues((body?.issues ?? []).map((i) => ({
+        message: `${i.path.join('.')}: ${i.message}`,
+        field: typeof i.path[0] === 'number' ? i.path[0] : undefined,
+      })))
     } finally {
       setSaving(false)
     }
@@ -177,7 +212,8 @@ export function FieldsPage() {
         <Button variant="ghost" size="icon" asChild aria-label="Back to settings">
           <Link to="/settings"><ArrowLeft /></Link>
         </Button>
-        <div className="min-w-0 flex-1">
+        {/* Wide enough to read before the button moves to its own row on a phone. */}
+        <div className="min-w-0 flex-1 basis-56">
           <h1 className="truncate text-xl font-semibold">{details.label.trim() || col.label}</h1>
           <p className="text-xs text-muted-foreground">
             Saved to{' '}
@@ -191,27 +227,38 @@ export function FieldsPage() {
             in your repository{dirty && ' · unsaved'}
           </p>
         </div>
-        <Button onClick={save} disabled={!dirty || saving || blocking.length > 0}>
+        <Button onClick={save} disabled={!dirty || saving} className="max-sm:w-full">
           {saving ? 'Saving…' : 'Save to repository'}
         </Button>
       </div>
 
-      {(error || blocking.length > 0) && (
+      {(error || (tried && blocking.length > 0)) && (
         <div className="min-w-0 space-y-2 overflow-hidden rounded-md border border-destructive/40 bg-destructive/5 p-3 text-sm">
           <p className="font-medium">{error ?? 'Fix these before saving'}</p>
           <ul className="max-h-48 list-disc overflow-y-auto pl-5 text-muted-foreground">
-            {[...blocking, ...issues].map((m, i) => <li key={i} className="break-words">{m}</li>)}
+            {[...(tried ? blocking : []), ...issues].map((p, i) => (
+              <li key={i} className="break-words">
+                {p.field !== undefined || p.details ? (
+                  <button type="button" className="text-left underline decoration-muted-foreground/40 underline-offset-2 hover:text-foreground" onClick={() => goTo(p)}>
+                    {p.message}
+                  </button>
+                ) : (
+                  p.message
+                )}
+              </li>
+            ))}
           </ul>
         </div>
       )}
 
-      <section className="space-y-3 rounded-md border p-4">
-        <h2 className="text-sm font-medium">Collection</h2>
+      <section id="details" className="scroll-mt-4 space-y-3 rounded-md border p-4">
+        <h2 className="text-sm font-medium">{kind === 'data' ? 'Data file' : 'Collection'}</h2>
         <CollectionFields
+          kind={kind}
           draft={details}
           isNew={false}
           contentDir={config.content_dir}
-          groups={groupOptions(config.collections)}
+          groups={groupOptions(config, kind)}
           onChange={(patch) => setDetails((d) => (d ? { ...d, ...patch } : d))}
         />
       </section>
@@ -220,11 +267,13 @@ export function FieldsPage() {
       <ul className="space-y-2">
         {fields.map((f, i) => {
           const open = openIndex === i
+          const TypeIcon = FIELD_TYPE_ICONS[f.type]
           return (
             <li
               key={i}
+              id={`param-${i}`}
               {...drag.rowProps(i)}
-              className={cn('rounded-md border bg-background', drag.over === i && drag.from !== i && 'relative z-10 ring-2 ring-ring')}
+              className={cn('scroll-mt-4 rounded-md border bg-background', drag.over === i && drag.from !== i && 'relative z-10 ring-2 ring-ring')}
             >
               <div className="flex items-center gap-2 p-2">
                 <span {...drag.handleProps} className="cursor-grab text-muted-foreground" aria-hidden><GripVertical className="size-4" /></span>
@@ -235,7 +284,7 @@ export function FieldsPage() {
                   </div>
                   <code className="text-xs text-muted-foreground">{f.id}</code>
                 </button>
-                <Badge variant="secondary">{FIELD_TYPE_LABELS[f.type]}</Badge>
+                <Badge variant="secondary"><TypeIcon /> {FIELD_TYPE_LABELS[f.type]}</Badge>
                 <Button variant="ghost" size="icon" onClick={() => remove(i)} aria-label={`Remove ${f.label}`}><Trash2 /></Button>
                 <Button variant="ghost" size="icon" onClick={() => setOpenIndex(open ? null : i)} aria-label={open ? 'Collapse' : 'Expand'}>
                   <ChevronDown className={cn('transition-transform', open && 'rotate-180')} />
@@ -266,7 +315,7 @@ export function FieldsPage() {
         >
           <Plus /> Add parameter
         </Button>
-        {missingCoreFields(fields).length > 0 && (
+        {kind === 'collection' && missingCoreFields(fields).length > 0 && (
           // Existing rows are kept by identity, so a renamed field still knows its original id.
           <Button variant="outline" onClick={() => setRows(withCoreFields(fields).map((f) => rows.find((r) => r.field === f) ?? { field: f }))}>
             <Plus /> Add defaults: {missingCoreFields(fields).map((f) => f.label).join(', ')}
@@ -331,22 +380,18 @@ function FieldSettings({ field, original, onChange }: {
       <div className="grid gap-4 sm:grid-cols-2">
         <div className="space-y-1.5">
           <Label htmlFor={`${field.id}-type`}>Parameter type</Label>
-          <Select
+          <FieldTypePicker
+            id={`${field.id}-type`}
             value={field.type}
-            onValueChange={(v) => {
-              const type = v as FieldType
+            onChange={(type) =>
               onChange({
                 type,
                 options: isChoice(type) ? (field.options ?? []) : undefined,
+                options_from: isChoice(type) ? field.options_from : undefined,
                 fields: isNested(type) ? (field.fields ?? []) : undefined,
               })
-            }}
-          >
-            <SelectTrigger id={`${field.id}-type`} className="w-full"><SelectValue /></SelectTrigger>
-            <SelectContent>
-              {FIELD_TYPES.map((t) => <SelectItem key={t} value={t}>{FIELD_TYPE_LABELS[t]}</SelectItem>)}
-            </SelectContent>
-          </Select>
+            }
+          />
         </div>
         <div className="flex items-end gap-3 pb-2">
           <Switch id={`${field.id}-required`} checked={field.required} onCheckedChange={(v) => onChange({ required: v })} />
@@ -456,6 +501,7 @@ function NumberSetting({ label, value, onChange }: { label: string; value?: numb
 
 function OptionsEditor({ field, onChange }: { field: Field; onChange: (patch: Partial<Field>) => void }) {
   const options = field.options ?? []
+  const [fromRepo, setFromRepo] = useState(!!field.options_from)
   const drag = useDragList((from, to) => onChange({ options: move(options, from, to) }))
   const set = (i: number, patch: Partial<Option>) =>
     onChange({ options: options.map((o, n) => (n === i ? { ...o, ...patch } : o)) })
@@ -463,6 +509,16 @@ function OptionsEditor({ field, onChange }: { field: Field; onChange: (patch: Pa
   return (
     <div className="space-y-2">
       <Label>Options</Label>
+      <div className="flex w-fit gap-1 rounded-md border p-1">
+        <Button type="button" size="xs" variant={fromRepo ? 'ghost' : 'secondary'} aria-pressed={!fromRepo} onClick={() => { setFromRepo(false); onChange({ options_from: undefined }) }}>
+          Listed here
+        </Button>
+        <Button type="button" size="xs" variant={fromRepo ? 'secondary' : 'ghost'} aria-pressed={fromRepo} onClick={() => setFromRepo(true)}>
+          From the repository
+        </Button>
+      </div>
+      {fromRepo ? <OptionsSource field={field} onChange={onChange} /> : (
+      <>
       <p className="text-xs text-muted-foreground">The label is shown in the CMS; the value is what gets written to the content file.</p>
       <ul className="space-y-2">
         {options.map((o, i) => (
@@ -488,6 +544,53 @@ function OptionsEditor({ field, onChange }: { field: Field; onChange: (patch: Pa
       >
         <Plus /> Add option
       </Button>
+      </>
+      )}
+    </div>
+  )
+}
+
+/**
+ * Points a choice field at a data file (a registry keyed by slug) or a content folder, and
+ * previews what it would offer so a wrong path shows up before saving.
+ */
+function OptionsSource({ field, onChange }: { field: Field; onChange: (patch: Partial<Field>) => void }) {
+  const { data } = useFetch<{ folders: string[]; dataFiles: string[] }>('/folders')
+  const contentDir = useConfig().config?.content_dir ?? 'content'
+  const from = field.options_from ?? ''
+  // Checked a moment after typing stops, so every keystroke is not a trip to GitHub.
+  const [checked, setChecked] = useState(from.trim())
+  useEffect(() => {
+    const t = setTimeout(() => setChecked(from.trim()), 400)
+    return () => clearTimeout(t)
+  }, [from])
+  const preview = useFetch<{ options: Option[] }>(checked ? `/options?from=${encodeURIComponent(checked)}` : null)
+  const found = preview.data?.options ?? []
+
+  return (
+    <div className="space-y-1.5">
+      <Combobox
+        id={`${field.id}-options-from`}
+        value={from}
+        mono
+        placeholder="data/platforms.yaml or content/categories"
+        browseLabel="Browse data files and folders"
+        options={[...(data?.dataFiles ?? []), ...(data?.folders ?? []).filter((f) => f.startsWith(`${contentDir}/`))]}
+        // A source replaces a hand-made list, so the list is not left behind in the config.
+        onChange={(v) => onChange({ options_from: v || undefined, options: undefined })}
+      />
+      <p className="text-xs text-muted-foreground">
+        A data file keyed by slug, like <code>windows: {'{ name: Windows }'}</code>, or a content folder with one page per
+        option. The key or slug is written to the content file; the name or title is shown.
+      </p>
+      {checked && preview.error && <p className="text-xs text-destructive">{preview.error.message}</p>}
+      {checked && preview.data && (
+        <p className="text-xs text-muted-foreground">
+          {found.length
+            ? `${found.length} option${found.length === 1 ? '' : 's'}: ${found.slice(0, 6).map((o) => o.label).join(', ')}${found.length > 6 ? ', …' : ''}`
+            : 'Nothing to choose from in there yet.'}
+        </p>
+      )}
     </div>
   )
 }
@@ -514,12 +617,7 @@ function ChildFieldsEditor({ field, onChange }: { field: Field; onChange: (patch
             <span {...drag.handleProps} className="cursor-grab text-muted-foreground" aria-hidden><GripVertical className="size-4" /></span>
             <Input value={child.label} placeholder="Name" className="max-w-40" onChange={(e) => set(i, { label: e.target.value, id: idFrom(e.target.value) || child.id })} />
             <Input value={child.id} placeholder="id" className="max-w-40 font-mono" onChange={(e) => set(i, { id: e.target.value })} />
-            <Select value={child.type} onValueChange={(v) => set(i, { type: v as FieldType })}>
-              <SelectTrigger className="w-36"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                {FIELD_TYPES.filter((t) => !isNested(t)).map((t) => <SelectItem key={t} value={t}>{FIELD_TYPE_LABELS[t]}</SelectItem>)}
-              </SelectContent>
-            </Select>
+            <FieldTypePicker value={child.type} exclude={NESTED_TYPES} className="w-44" onChange={(type) => set(i, { type })} />
             <label className="flex items-center gap-2 text-xs">
               <Switch checked={child.required} onCheckedChange={(v) => set(i, { required: v })} /> Required
             </label>

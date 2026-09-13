@@ -105,8 +105,9 @@ export function MediaPage() {
     >
       <div className="flex flex-wrap items-center gap-2">
         <h1 className="text-xl font-semibold">Media</h1>
-        <div className="ml-auto flex items-center gap-2">
-          <Input placeholder="Search…" value={q} onChange={(e) => setQ(e.target.value)} className="w-48" />
+        {/* On a phone the tools take their own full-width row, and the search box gives up the space. */}
+        <div className="flex w-full items-center gap-2 sm:ml-auto sm:w-auto">
+          <Input placeholder="Search…" value={q} onChange={(e) => setQ(e.target.value)} className="min-w-0 flex-1 sm:w-48 sm:flex-none" />
           <Button variant={view === 'grid' ? 'secondary' : 'ghost'} size="icon" onClick={() => setView('grid')} aria-label="Grid view"><LayoutGrid /></Button>
           <Button variant={view === 'list' ? 'secondary' : 'ghost'} size="icon" onClick={() => setView('list')} aria-label="List view"><List /></Button>
           <Button onClick={() => fileInput.current?.click()} disabled={!!busy}><Upload /> Upload</Button>
