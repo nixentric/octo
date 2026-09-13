@@ -4,6 +4,7 @@ import { ExternalLink, Lock, RefreshCw } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
 import { api } from '@/lib/api'
 import { useFetch } from '@/lib/use-fetch'
@@ -101,12 +102,38 @@ export function ConnectRepoPage() {
           </div>
           <div className="space-y-1">
             <Label htmlFor="branch">Branch</Label>
-            <Input id="branch" value={branch} onChange={(e) => setBranch(e.target.value)} className="max-w-xs" />
+            <BranchSelect repo={selected} value={branch} onChange={setBranch} />
           </div>
           {err && <p className="text-sm text-destructive">{err}</p>}
           <Button onClick={connect} disabled={busy}>{busy ? 'Connecting…' : 'Connect'}</Button>
         </div>
       )}
     </div>
+  )
+}
+
+function BranchSelect({ repo, value, onChange }: { repo: RepoInfo; value: string; onChange: (branch: string) => void }) {
+  const { data, error } = useFetch<{ branches: string[]; defaultBranch: string }>(
+    `/repos/${repo.owner}/${repo.name}/branches`,
+  )
+
+  // While the list loads, the repository's default branch is already known.
+  const branches = data?.branches ?? [repo.defaultBranch]
+
+  return (
+    <>
+      <Select value={value} onValueChange={onChange} disabled={!data}>
+        <SelectTrigger id="branch" className="w-full max-w-xs"><SelectValue /></SelectTrigger>
+        <SelectContent className="max-h-72">
+          {branches.map((b) => (
+            <SelectItem key={b} value={b}>
+              {b}
+              {b === (data?.defaultBranch ?? repo.defaultBranch) && <span className="ml-2 text-xs text-muted-foreground">default</span>}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      {error && <p className="text-xs text-destructive">{error.message}</p>}
+    </>
   )
 }

@@ -17,9 +17,11 @@ export function LoginPage() {
   return (
     <div className="flex min-h-screen items-center justify-center p-6">
       <div className="w-full max-w-sm space-y-6">
-        <div className="space-y-1">
-          <Logo className="mb-4 size-10" />
-          <h1 className="text-2xl font-semibold tracking-tight">Octo CMS</h1>
+        <div className="space-y-3">
+          <div className="flex items-center gap-3">
+            <Logo className="size-12" />
+            <h1 className="text-3xl font-semibold tracking-tight">Octo CMS</h1>
+          </div>
           <p className="text-sm text-muted-foreground">Manage the content of your site. Changes are saved straight to your repository.</p>
         </div>
         <Button asChild className="w-full" size="lg">

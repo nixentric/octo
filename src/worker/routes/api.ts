@@ -108,6 +108,25 @@ api.get('/repos', async (c) => {
   return c.json({ repos, installUrl })
 })
 
+const REPO_SEGMENT = /^[A-Za-z0-9_.-]+$/
+
+api.get('/repos/:owner/:name/branches', async (c) => {
+  const { owner, name } = c.req.param()
+  if (!REPO_SEGMENT.test(owner) || !REPO_SEGMENT.test(name)) return c.json({ error: 'Invalid repository' }, 400)
+
+  const { token } = c.get('session')
+  const cached = await readCache(token, ['branches', owner, name])
+  if (cached) return c.json(JSON.parse(cached))
+
+  const [repo, branches] = await Promise.all([
+    gh<{ default_branch: string }>(token, `/repos/${owner}/${name}`),
+    gh<{ name: string }[]>(token, `/repos/${owner}/${name}/branches?per_page=100`),
+  ])
+  const body = { branches: branches.map((b) => b.name), defaultBranch: repo.default_branch }
+  await writeCache(token, ['branches', owner, name], JSON.stringify(body), REPOS_TTL)
+  return c.json(body)
+})
+
 const repoBody = z.object({ owner: z.string().min(1), name: z.string().min(1), branch: z.string().min(1).optional() })
 
 api.post('/repo', async (c) => {
