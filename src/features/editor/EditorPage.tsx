@@ -232,7 +232,7 @@ function Editor({ col, slugParam }: { col: Collection; slugParam?: string }) {
         <div className="min-w-0 flex-1">
           <div className="truncate font-medium">{title}</div>
           <div className="text-xs text-muted-foreground">
-            {col.label}{status && <> · <Badge variant={status === 'draft' ? 'outline' : 'secondary'} className="ml-1">{status}</Badge></>}{dirty && ' · unsaved'}
+            {col.label}{status && <> · <Badge variant={status === 'draft' ? 'warning' : 'success'} className="ml-1">{status}</Badge></>}{dirty && ' · unsaved'}
           </div>
         </div>
         {!isNew && liveUrl && (
@@ -293,12 +293,6 @@ function Editor({ col, slugParam }: { col: Collection; slugParam?: string }) {
               <div className="flex flex-col gap-8 xl:flex-row xl:items-start">
                 <div className="min-w-0 flex-1 space-y-6">
                   {mainFields.map(renderField)}
-                  <CustomFields
-                    key={version?.commit.sha ?? entry?.sha ?? 'new'}
-                    data={shown.data}
-                    known={new Set(fields.map((f) => f.id))}
-                    onChange={setCustom}
-                  />
                 </div>
                 {sidebarFields.length > 0 && (
                   <aside className="w-full shrink-0 space-y-6 rounded-md border p-4 xl:sticky xl:top-6 xl:w-72">
@@ -306,6 +300,12 @@ function Editor({ col, slugParam }: { col: Collection; slugParam?: string }) {
                   </aside>
                 )}
               </div>
+              <CustomFields
+                key={version?.commit.sha ?? entry?.sha ?? 'new'}
+                data={shown.data}
+                known={new Set(fields.map((f) => f.id))}
+                onChange={setCustom}
+              />
             </fieldset>
           </div>
         </div>
@@ -355,14 +355,17 @@ function EditorSkeleton() {
   )
 }
 
-/** Frontmatter the collection does not describe. Kept on save either way; this makes it visible. */
+/**
+ * Frontmatter the collection does not describe. Kept on save either way; this makes it visible,
+ * and only when there is some. New fields belong in the collection's parameters instead.
+ */
 function CustomFields({ data, known, onChange }: {
   data: Frontmatter
   known: Set<string>
   onChange: (name: string, value: unknown) => void
 }) {
-  const [newName, setNewName] = useState('')
   const extras = Object.keys(data).filter((k) => !known.has(k))
+  if (!extras.length) return null
 
   return (
     <section className="space-y-4 border-t pt-6">
@@ -376,19 +379,6 @@ function CustomFields({ data, known, onChange }: {
       {extras.map((name) => (
         <CustomField key={name} name={name} value={data[name]} onChange={(v) => onChange(name, v)} onRemove={() => onChange(name, undefined)} />
       ))}
-
-      <form
-        className="flex gap-2"
-        onSubmit={(e) => {
-          e.preventDefault()
-          const name = newName.trim()
-          if (name && !(name in data)) onChange(name, '')
-          setNewName('')
-        }}
-      >
-        <Input value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="field_name" className="max-w-xs font-mono" />
-        <Button type="submit" variant="outline" disabled={!newName.trim()}>Add field</Button>
-      </form>
     </section>
   )
 }

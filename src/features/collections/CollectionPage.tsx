@@ -125,7 +125,7 @@ export function CollectionPage() {
                   <div className="text-xs text-muted-foreground">{e.slug}</div>
                 </TableCell>
                 <TableCell>
-                  <Badge variant={e.status === 'draft' ? 'outline' : 'secondary'}>{e.status}</Badge>
+                  <Badge variant={e.status === 'draft' ? 'warning' : 'success'}>{e.status}</Badge>
                 </TableCell>
                 <TableCell className="text-muted-foreground">{formatDateTime(e.updatedAt)}</TableCell>
                 <TableCell className="text-muted-foreground">{e.author ?? '—'}</TableCell>

@@ -129,6 +129,10 @@ export const collectionSchema = z
   .object({
     name: z.string().regex(/^[a-z0-9_-]+$/),
     label: z.string(),
+    /** Sidebar icon, by Lucide name. */
+    icon: z.string().optional(),
+    /** Sidebar heading this collection is listed under; without one it goes under "Content". */
+    group: z.string().optional(),
     folder: z.string().min(1),
     create: z.boolean().default(true),
     extension: z.string().default('md'),
@@ -140,6 +144,23 @@ export const collectionSchema = z
     )
   })
 export type Collection = z.infer<typeof collectionSchema>
+
+export const DEFAULT_GROUP = 'Content'
+
+/**
+ * Collections under their sidebar headings. Headings keep the order they first appear in, so
+ * dragging collections in Settings orders the headings too; case is ignored when matching.
+ */
+export function groupCollections<T extends { group?: string }>(collections: T[]) {
+  const groups = new Map<string, { name: string; collections: T[] }>()
+  for (const c of collections) {
+    const name = c.group?.trim() || DEFAULT_GROUP
+    const key = name.toLowerCase()
+    if (!groups.has(key)) groups.set(key, { name, collections: [] })
+    groups.get(key)!.collections.push(c)
+  }
+  return [...groups.values()]
+}
 
 export const configSchema = z.object({
   adapter: z.enum(['hugo', 'generic']).default('hugo'),

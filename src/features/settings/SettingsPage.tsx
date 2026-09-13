@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router'
-import { Globe, GripVertical, Link2, Plus, SlidersHorizontal, Trash2 } from 'lucide-react'
+import { ChevronRight, ExternalLink, Globe, GripVertical, Link2, Plus, SlidersHorizontal, Trash2 } from 'lucide-react'
+import { CollectionIcon } from '@/components/CollectionIcon'
 import { useConfirm } from '@/components/confirm'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogFooter, DialogTitle } from '@/components/ui/dialog'
@@ -8,13 +9,14 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { CONFIG_PATH, type Collection, type ResolvedConfig } from '@/core/config'
-import { slugify } from '@/core/slug'
 import { useSession } from '@/features/auth/session'
 import { ConfigNotice } from '@/features/config/ConfigNotice'
 import { useConfig } from '@/features/config/use-config'
 import { api } from '@/lib/api'
+import { githubUrl } from '@/lib/github'
 import { move, useDragList } from '@/lib/use-drag-list'
 import { cn } from '@/lib/utils'
+import { CollectionFields, groupOptions, groupToSave, type CollectionDraft } from './CollectionFields'
 import { FolderInput } from './FolderInput'
 
 type SiteSettings = Pick<ResolvedConfig, 'adapter' | 'content_dir' | 'media_dir' | 'public_media_path'> & { site_url: string }
@@ -44,7 +46,20 @@ export function SettingsPage() {
       <section className="space-y-3">
         <h2 className="text-sm font-medium">Repository</h2>
         <dl className="grid grid-cols-[10rem_1fr] gap-y-1 text-sm">
-          <dt className="text-muted-foreground">Repository</dt><dd>{me?.repo?.owner}/{me?.repo?.name}</dd>
+          <dt className="text-muted-foreground">Repository</dt>
+          <dd>
+            {me?.repo && (
+              <a
+                href={githubUrl(me.repo, 'tree')}
+                target="_blank"
+                rel="noreferrer"
+                title="Open on GitHub"
+                className="inline-flex items-center gap-1 hover:underline"
+              >
+                {me.repo.owner}/{me.repo.name} <ExternalLink className="size-3.5 text-muted-foreground" />
+              </a>
+            )}
+          </dd>
           <dt className="text-muted-foreground">Branch</dt><dd>{me?.repo?.branch}</dd>
         </dl>
         <Button variant="outline" size="sm" onClick={disconnect}>Disconnect repository</Button>
@@ -58,6 +73,7 @@ export function SettingsPage() {
 }
 
 function SiteSection({ config, onSaved }: { config: ResolvedConfig; onSaved: () => void }) {
+  const { me } = useSession()
   const initial: SiteSettings = {
     adapter: config.adapter,
     content_dir: config.content_dir,
@@ -142,7 +158,17 @@ function SiteSection({ config, onSaved }: { config: ResolvedConfig; onSaved: () 
       </div>
 
       {error && <p className="text-sm text-destructive">{error}</p>}
-      <p className="text-xs text-muted-foreground">Saved to <code>{CONFIG_PATH}</code> in the repository.</p>
+      <p className="text-xs text-muted-foreground">
+        Saved to{' '}
+        {me?.repo ? (
+          <a href={githubUrl(me.repo, 'blob', CONFIG_PATH)} target="_blank" rel="noreferrer" title="Open on GitHub" className="inline-flex items-center gap-0.5 hover:underline">
+            <code>{CONFIG_PATH}</code> <ExternalLink className="size-3" />
+          </a>
+        ) : (
+          <code>{CONFIG_PATH}</code>
+        )}{' '}
+        in the repository.
+      </p>
     </section>
   )
 }
@@ -163,14 +189,14 @@ function PickerField({ id, label, value, onChange, help }: {
   )
 }
 
-
-type Draft = { name: string; label: string; folder: string }
+const NEW_COLLECTION: CollectionDraft = { name: '', label: '', folder: '', group: '' }
 
 function CollectionsSection({ config, onChanged }: { config: ResolvedConfig; onChanged: () => void }) {
-  const [editing, setEditing] = useState<{ draft: Draft; existing?: Collection } | null>(null)
+  const [adding, setAdding] = useState<CollectionDraft | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const confirm = useConfirm()
+  const navigate = useNavigate()
   const firstField = useRef<HTMLInputElement>(null)
   // Dragging reorders locally first so the row follows the cursor, then commits.
   const [order, setOrder] = useState<Collection[] | null>(null)
@@ -208,19 +234,16 @@ function CollectionsSection({ config, onChanged }: { config: ResolvedConfig; onC
     }
   }
 
-  async function save() {
-    if (!editing) return
-    const { draft, existing } = editing
+  async function add() {
+    if (!adding) return
     setBusy(true)
     setError(null)
     try {
-      if (existing) {
-        await api(`/config/collections/${existing.name}`, { method: 'PATCH', json: { label: draft.label, folder: draft.folder } })
-      } else {
-        await api('/config/collections', { method: 'POST', json: draft })
-      }
-      setEditing(null)
+      await api('/config/collections', { method: 'POST', json: { ...adding, group: groupToSave(adding.group) } })
+      setAdding(null)
       onChanged()
+      // Straight on to its page, where its parameters are set up.
+      navigate(`/settings/collections/${adding.name}`)
     } catch (e) {
       setError((e as Error).message)
     } finally {
@@ -228,23 +251,14 @@ function CollectionsSection({ config, onChanged }: { config: ResolvedConfig; onC
     }
   }
 
-  const startAdd = () => {
-    setError(null)
-    setEditing({ draft: { name: '', label: '', folder: '' } })
-  }
-  const startEdit = (col: Collection) => {
-    setError(null)
-    setEditing({ draft: { name: col.name, label: col.label, folder: col.folder }, existing: col })
-  }
-
   return (
     <section className="space-y-3">
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-sm font-medium">Collections</h2>
-          <p className="text-xs text-muted-foreground">Drag to set the order they appear in the sidebar.</p>
+          <p className="text-xs text-muted-foreground">Open one to change its settings and parameters. Drag to set the sidebar order.</p>
         </div>
-        <Button size="sm" variant="outline" onClick={startAdd}><Plus /> Add collection</Button>
+        <Button size="sm" variant="outline" onClick={() => { setError(null); setAdding(NEW_COLLECTION) }}><Plus /> Add collection</Button>
       </div>
 
       <ul className="divide-y rounded-md border">
@@ -255,89 +269,61 @@ function CollectionsSection({ config, onChanged }: { config: ResolvedConfig; onC
             className={cn(
               // No dimming of the source row: the browser already draws a
               // translucent copy under the cursor, and both at once reads as a glitch.
-              'flex flex-wrap items-center gap-2 bg-background px-3 py-2 text-sm',
+              'flex items-center gap-2 bg-background px-3 py-2 text-sm',
               drag.over === i && drag.from !== i && 'relative z-10 ring-2 ring-ring',
             )}
           >
             <span {...drag.handleProps} className="cursor-grab text-muted-foreground" aria-hidden><GripVertical className="size-4" /></span>
-            <button type="button" className="min-w-0 flex-1 text-left" onClick={() => startEdit(col)}>
-              <div className="font-medium">{col.label}</div>
-              <code className="text-xs text-muted-foreground">{col.folder}</code>
-            </button>
-            <Button variant="ghost" size="sm" asChild>
-              <Link to={`/settings/collections/${col.name}`}>
-                <SlidersHorizontal /> {col.fields.length} parameters
-              </Link>
-            </Button>
+            <Link to={`/settings/collections/${col.name}`} className="flex min-w-0 flex-1 items-center gap-3 rounded-md px-2 py-1 hover:bg-accent/50">
+              <CollectionIcon name={col.icon} className="size-4 shrink-0 text-muted-foreground" />
+              <div className="min-w-0 flex-1">
+                <div className="font-medium">{col.label}</div>
+                <div className="truncate text-xs text-muted-foreground">
+                  <code>{col.folder}</code>{col.group?.trim() && ` · ${col.group}`}
+                </div>
+              </div>
+              <span className="hidden shrink-0 items-center gap-1.5 text-xs text-muted-foreground sm:flex">
+                <SlidersHorizontal className="size-3.5" /> {col.fields.length} parameters
+              </span>
+              <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
+            </Link>
             <Button variant="ghost" size="icon" aria-label={`Remove ${col.label}`} onClick={() => remove(col)}><Trash2 /></Button>
           </li>
         ))}
       </ul>
 
-      <Dialog open={!!editing} onOpenChange={(o) => !o && setEditing(null)}>
+      <Dialog open={!!adding} onOpenChange={(o) => !o && setAdding(null)}>
         <DialogContent
-          className="max-w-md"
+          // Name, group, icons and folder outgrow a short laptop screen; scroll rather than cut off the button.
+          className="max-h-[calc(100dvh-2rem)] max-w-md overflow-y-auto"
           onOpenAutoFocus={(e) => {
             // Radix picks its own target; the name field is the one to start in.
             e.preventDefault()
             firstField.current?.focus()
           }}
         >
-          <DialogTitle>{editing?.existing ? `Edit ${editing.existing.label}` : 'Add a collection'}</DialogTitle>
-          {editing && (
+          <DialogTitle>Add a collection</DialogTitle>
+          {adding && (
             <form
               className="space-y-4"
               onSubmit={(e) => {
                 e.preventDefault()
-                save()
+                add()
               }}
             >
-              <div className="space-y-1.5">
-                <Label htmlFor="col-label">Name</Label>
-                <Input
-                  id="col-label"
-                  ref={firstField}
-                  value={editing.draft.label}
-                  placeholder="Services"
-                  onChange={(e) => {
-                    const label = e.target.value
-                    setEditing((s) => {
-                      if (!s) return s
-                      if (s.existing) return { ...s, draft: { ...s.draft, label } }
-                      const name = slugify(label)
-                      return { ...s, draft: { label, name, folder: name ? `${config.content_dir}/${name}` : '' } }
-                    })
-                  }}
-                />
-                <p className="text-xs text-muted-foreground">Shown in the sidebar.</p>
-              </div>
-
-              <div className="space-y-1.5">
-                <Label htmlFor="col-folder">Folder</Label>
-                <FolderInput
-                  id="col-folder"
-                  value={editing.draft.folder}
-                  placeholder={`${config.content_dir}/services`}
-                  onChange={(folder) => setEditing((s) => (s ? { ...s, draft: { ...s.draft, folder } } : s))}
-                />
-                <p className="text-xs text-muted-foreground">
-                  {editing.existing
-                    ? 'Pointing at a different folder does not move any files.'
-                    : 'Created on the first entry you save — it does not need to exist yet.'}
-                </p>
-              </div>
-
-              {!editing.existing && (
-                <p className="text-xs text-muted-foreground">
-                  URL and config key: <code>{editing.draft.name || '…'}</code>
-                </p>
-              )}
+              <CollectionFields
+                draft={adding}
+                isNew
+                contentDir={config.content_dir}
+                groups={groupOptions(collections)}
+                nameRef={firstField}
+                onChange={(patch) => setAdding((d) => (d ? { ...d, ...patch } : d))}
+              />
               {error && <p className="text-sm text-destructive">{error}</p>}
-
               <DialogFooter>
-                <Button type="button" variant="outline" onClick={() => setEditing(null)}>Cancel</Button>
-                <Button type="submit" disabled={busy || !editing.draft.label.trim() || !editing.draft.folder.trim()}>
-                  {busy ? 'Saving…' : editing.existing ? 'Save' : 'Add collection'}
+                <Button type="button" variant="outline" onClick={() => setAdding(null)}>Cancel</Button>
+                <Button type="submit" disabled={busy || !adding.label.trim() || !adding.folder.trim()}>
+                  {busy ? 'Adding…' : 'Add collection'}
                 </Button>
               </DialogFooter>
             </form>

@@ -1,5 +1,6 @@
 import { useRef, useState, type ReactNode } from 'react'
 import { Bold, ChevronDown, Code as CodeIcon, GripVertical, Heading2, ImageIcon, Italic, Link as LinkIcon, List, Plus, Quote, Trash2, X } from 'lucide-react'
+import { DatePicker } from '@/components/DatePicker'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
@@ -11,6 +12,7 @@ import type { Field, FieldType } from '@/core/config'
 import { MediaPicker } from '@/features/media/MediaPicker'
 import { publicToRaw } from '@/features/media/MediaPage'
 import { useConfig } from '@/features/config/use-config'
+import { parseDate, toYMD } from '@/lib/calendar'
 import { move, useDragList } from '@/lib/use-drag-list'
 import { cn } from '@/lib/utils'
 
@@ -93,28 +95,35 @@ const BooleanField: FieldComponent = ({ id, value, onChange }) => (
 // ---------- date & time ----------
 
 const pad = (n: number) => String(n).padStart(2, '0')
-const toLocalInput = (v: unknown, withTime: boolean) => {
-  if (!v) return ''
-  const d = new Date(str(v))
-  if (isNaN(d.getTime())) return str(v)
-  const date = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
-  return withTime ? `${date}T${pad(d.getHours())}:${pad(d.getMinutes())}` : date
-}
+const at = (day: Date, hours: number, minutes: number) => new Date(day.getFullYear(), day.getMonth(), day.getDate(), hours, minutes)
 
 const dateField = (withTime: boolean): FieldComponent =>
   function DateField({ id, value, onChange }) {
+    const current = parseDate(value)
+    // Date-only fields store the calendar day; datetime fields a UTC timestamp.
+    const emit = (d: Date | null) => onChange(!d ? undefined : withTime ? d.toISOString().replace(/\.\d{3}Z$/, 'Z') : toYMD(d))
+
     return (
-      <Input
-        id={id}
-        type={withTime ? 'datetime-local' : 'date'}
-        className="max-w-56"
-        value={toLocalInput(value, withTime)}
-        onChange={(e) =>
-          onChange(
-            !e.target.value ? undefined : withTime ? new Date(e.target.value).toISOString().replace(/\.\d{3}Z$/, 'Z') : e.target.value,
-          )
-        }
-      />
+      <div className="flex flex-wrap items-center gap-2">
+        <DatePicker
+          id={id}
+          value={current}
+          onChange={(day) => emit(day && withTime ? at(day, current?.getHours() ?? 0, current?.getMinutes() ?? 0) : day)}
+        />
+        {withTime && (
+          <Input
+            type="time"
+            aria-label="Time"
+            className="w-28"
+            disabled={!current}
+            value={current ? `${pad(current.getHours())}:${pad(current.getMinutes())}` : ''}
+            onChange={(e) => {
+              const [h, m] = e.target.value.split(':').map(Number)
+              if (current && !isNaN(h) && !isNaN(m)) emit(at(current, h, m))
+            }}
+          />
+        )}
+      </div>
     )
   }
 

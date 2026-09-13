@@ -1,12 +1,14 @@
 import { useState } from 'react'
 import { NavLink, Outlet } from 'react-router'
-import { Check, ChevronsUpDown, FileText, Image, LaptopMinimal, LayoutDashboard, LogOut, Moon, PanelLeftClose, PanelLeftOpen, Plus, Settings, Sun } from 'lucide-react'
+import { Check, ChevronsUpDown, Globe, Image, LaptopMinimal, LayoutDashboard, LogOut, Moon, PanelLeftClose, PanelLeftOpen, Plus, Settings, Sun } from 'lucide-react'
+import { CollectionIcon } from '@/components/CollectionIcon'
 import { Logo } from '@/components/Logo'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import { DEFAULT_GROUP, groupCollections } from '@/core/config'
 import type { RepoInfo } from '@/core/types'
 import { logout, useSession } from '@/features/auth/session'
 import { api } from '@/lib/api'
@@ -26,6 +28,7 @@ export function AppShell() {
 
 function Shell() {
   const { me } = useSession()
+  const { config } = useConfig()
   // One state for both layouts: a side panel on wide screens, an overlay on narrow ones.
   const [hidden, setHidden] = useState(() => {
     try {
@@ -63,7 +66,14 @@ function Shell() {
           <Logo className="size-5" /> Octo
         </NavLink>
         <SiteSwitcher />
-        <div className="ml-auto">
+        <div className="ml-auto flex items-center gap-1">
+          {config?.site_url && (
+            <Button variant="ghost" size="sm" asChild>
+              <a href={config.site_url} target="_blank" rel="noreferrer" aria-label="View site" title={config.site_url}>
+                <Globe /> <span className="hidden sm:inline">View site</span>
+              </a>
+            </Button>
+          )}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="ghost" size="sm" className="gap-2">
@@ -184,20 +194,30 @@ function Sidebar({ onNavigate }: { onNavigate: () => void }) {
     )
 
   return (
-    <nav className="space-y-4 p-3" onClick={onNavigate}>
+    // Full height so Media and Settings sit at the bottom; only link clicks close
+    // the overlay, not taps on the empty space that now fills the middle.
+    <nav className="flex min-h-full flex-col gap-4 p-3" onClick={(e) => (e.target as Element).closest('a') && onNavigate()}>
       <NavLink to="/" end className={item}><LayoutDashboard className="size-4" /> Dashboard</NavLink>
 
-      <div>
-        <div className="px-2 pb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">Content</div>
-        {config?.collections.map((c) => (
-          <NavLink key={c.name} to={`/content/${c.name}`} className={item}>
-            <FileText className="size-4" /> {c.label}
-          </NavLink>
-        ))}
-        {!config && <div className="px-2 py-1 text-xs text-muted-foreground">No collections</div>}
-      </div>
+      {config ? (
+        groupCollections(config.collections).map((g) => (
+          <div key={g.name}>
+            <div className="px-2 pb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">{g.name}</div>
+            {g.collections.map((c) => (
+              <NavLink key={c.name} to={`/content/${c.name}`} className={item}>
+                <CollectionIcon name={c.icon} className="size-4" /> {c.label}
+              </NavLink>
+            ))}
+          </div>
+        ))
+      ) : (
+        <div>
+          <div className="px-2 pb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">{DEFAULT_GROUP}</div>
+          <div className="px-2 py-1 text-xs text-muted-foreground">No collections</div>
+        </div>
+      )}
 
-      <div className="space-y-0.5">
+      <div className="mt-auto space-y-0.5">
         <NavLink to="/media" className={item}><Image className="size-4" /> Media</NavLink>
         <NavLink to="/settings" className={item}><Settings className="size-4" /> Settings</NavLink>
       </div>

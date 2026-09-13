@@ -1,6 +1,15 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { detectCollections, detectSite, inferFields, labelFor } from './generate-config.ts'
+import { detectCollections, detectSite, inferFields, labelFor, missingCoreFields, STARTER_FIELDS, withCoreFields } from './generate-config.ts'
+
+test('title, date, draft and body are added to whatever was inferred', () => {
+  const inferred = inferFields([{ title: 'A', description: 'x', date: '2026-09-06' }], true)
+  assert.deepEqual(withCoreFields(inferred).map((f) => f.id), ['title', 'description', 'date', 'draft', 'body'])
+  assert.equal(withCoreFields(inferred)[2].type, 'date') // an inferred field wins over the starter one
+  const bare = withCoreFields([{ id: 'layout', label: 'Layout', type: 'text', required: false }])
+  assert.deepEqual(bare.map((f) => f.id), ['title', 'layout', 'date', 'draft', 'body'])
+  assert.deepEqual(missingCoreFields(STARTER_FIELDS), [])
+})
 
 test('labels read as words', () => {
   assert.equal(labelFor('starting_price'), 'Starting Price')

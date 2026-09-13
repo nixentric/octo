@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link, useBlocker, useParams } from 'react-router'
-import { ArrowLeft, ChevronDown, GripVertical, Plus, Trash2, TriangleAlert } from 'lucide-react'
+import { ArrowLeft, ChevronDown, ExternalLink, GripVertical, Plus, Trash2, TriangleAlert } from 'lucide-react'
 import { useConfirm } from '@/components/confirm'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -11,16 +11,23 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import {
-  CHOICE_TYPES, FIELD_ID, FIELD_TYPE_LABELS, FIELD_TYPES, fieldPanel, MULTI_CHOICE_TYPES, NESTED_TYPES,
+  CHOICE_TYPES, CONFIG_PATH, FIELD_ID, FIELD_TYPE_LABELS, FIELD_TYPES, fieldPanel, MULTI_CHOICE_TYPES, NESTED_TYPES,
   type Field, type FieldType, type Option,
 } from '@/core/config'
+import { missingCoreFields, withCoreFields } from '@/core/generate-config'
 import { slugify } from '@/core/slug'
+import { useSession } from '@/features/auth/session'
 import { ConfigNotice } from '@/features/config/ConfigNotice'
 import { useConfig } from '@/features/config/use-config'
 import { api, ApiError } from '@/lib/api'
+import { githubUrl } from '@/lib/github'
 import { useDelayed } from '@/lib/use-delayed'
 import { move, useDragList } from '@/lib/use-drag-list'
 import { cn } from '@/lib/utils'
+import { CollectionFields, draftOf, groupOptions, groupToSave, type CollectionDraft } from './CollectionFields'
+
+const sameDetails = (a: CollectionDraft, b: CollectionDraft) =>
+  a.label === b.label && a.folder === b.folder && a.icon === b.icon && groupToSave(a.group) === groupToSave(b.group)
 
 const idFrom = (label: string) => slugify(label).replace(/-/g, '_').replace(/^(?=\d)/, 'f_')
 const isChoice = (t: FieldType) => (CHOICE_TYPES as string[]).includes(t)
@@ -36,14 +43,20 @@ const newField = (existing: Field[]): Field => {
   return { id, label: 'New field', type: 'text', required: false }
 }
 
+/** One page per collection: its name, group, icon and folder, then its parameters, saved together. */
 export function FieldsPage() {
   const { collection = '' } = useParams()
+  const { me } = useSession()
   const { config, error: cfgError, refetch } = useConfig()
   const col = config?.collections.find((c) => c.name === collection)
 
   // Rows remember the id each field had when loaded, so a rename is still
   // recognised after the list is reordered.
   const [rows, setRows] = useState<Row[] | null>(null)
+  // The details are compared with what was last saved, not with the config,
+  // which is still being refetched for a moment after a save.
+  const [details, setDetails] = useState<CollectionDraft | null>(null)
+  const [savedDetails, setSavedDetails] = useState<CollectionDraft | null>(null)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [issues, setIssues] = useState<string[]>([])
@@ -53,17 +66,23 @@ export function FieldsPage() {
 
   useEffect(() => {
     if (col && rows === null) setRows(col.fields.map((f) => ({ field: f, originalId: f.id })))
-  }, [col, rows])
+    if (col && details === null) {
+      setDetails(draftOf(col))
+      setSavedDetails(draftOf(col))
+    }
+  }, [col, rows, details])
 
   const fields = rows?.map((r) => r.field) ?? null
-  const dirty = !!col && !!fields && JSON.stringify(fields) !== JSON.stringify(col.fields)
+  const fieldsDirty = !!col && !!fields && JSON.stringify(fields) !== JSON.stringify(col.fields)
+  const detailsDirty = !!details && !!savedDetails && !sameDetails(details, savedDetails)
+  const dirty = fieldsDirty || detailsDirty
 
   const blocker = useBlocker(() => dirty)
   useEffect(() => {
     if (blocker.state !== 'blocked') return
     confirm({
       title: 'Leave without saving?',
-      body: 'Your changes to these parameters will be lost.',
+      body: 'Your changes to this collection will be lost.',
       confirmLabel: 'Leave',
       destructive: true,
     }).then((ok) => (ok ? blocker.proceed() : blocker.reset()))
@@ -72,7 +91,7 @@ export function FieldsPage() {
   const drag = useDragList((from, to) => setRows((r) => (r ? move(r, from, to) : r)))
 
   if (cfgError) return <div className="p-6"><ConfigNotice /></div>
-  if (!col || !rows || !fields) {
+  if (!config || !col || !rows || !fields || !details) {
     if (!showSkeleton) return null
     return (
       <div className="mx-auto max-w-3xl space-y-5 p-6">
@@ -101,7 +120,12 @@ export function FieldsPage() {
     if (isNested(f.type) && !f.fields?.length) problems.push(`${f.id} is a ${f.type} and needs at least one child`)
     return problems
   })
-  const blocking = [...new Set([...localErrors, ...duplicateIds.map((id) => `Duplicate parameter ID "${id}"`)])]
+  const blocking = [...new Set([
+    ...(details.label.trim() ? [] : ['The collection needs a name']),
+    ...(details.folder.trim() ? [] : ['The collection needs a folder']),
+    ...localErrors,
+    ...duplicateIds.map((id) => `Duplicate parameter ID "${id}"`),
+  ])]
 
   const update = (index: number, patch: Partial<Field>) =>
     setRows((all) => all!.map((r, i) => (i === index ? { ...r, field: { ...r.field, ...patch } } : r)))
@@ -122,10 +146,21 @@ export function FieldsPage() {
     setError(null)
     setIssues([])
     try {
-      // Adopt what the server stored rather than clearing: the config fetch is
-      // still in flight, and falling back to it would show the pre-save schema.
-      const saved = await api<{ fields: Field[] }>(`/config/collections/${col!.name}/fields`, { method: 'PUT', json: { fields } })
-      setRows(saved.fields.map((f) => ({ field: f, originalId: f.id })))
+      // One button, but two writes when both parts changed: each re-reads the config file, so the second builds on the first.
+      if (detailsDirty) {
+        const d = details!
+        await api(`/config/collections/${col!.name}`, {
+          method: 'PATCH',
+          json: { label: d.label, folder: d.folder, icon: d.icon, group: groupToSave(d.group) },
+        })
+        setSavedDetails(d)
+      }
+      if (fieldsDirty) {
+        // Adopt what the server stored rather than clearing: the config fetch is
+        // still in flight, and falling back to it would show the pre-save schema.
+        const saved = await api<{ fields: Field[] }>(`/config/collections/${col!.name}/fields`, { method: 'PUT', json: { fields } })
+        setRows(saved.fields.map((f) => ({ field: f, originalId: f.id })))
+      }
       refetch()
     } catch (e) {
       setError((e as Error).message)
@@ -143,8 +178,18 @@ export function FieldsPage() {
           <Link to="/settings"><ArrowLeft /></Link>
         </Button>
         <div className="min-w-0 flex-1">
-          <h1 className="text-xl font-semibold">{col.label} parameters</h1>
-          <p className="text-xs text-muted-foreground">Saved to cms.config.yml in your repository{dirty && ' · unsaved'}</p>
+          <h1 className="truncate text-xl font-semibold">{details.label.trim() || col.label}</h1>
+          <p className="text-xs text-muted-foreground">
+            Saved to{' '}
+            {me?.repo ? (
+              <a href={githubUrl(me.repo, 'blob', CONFIG_PATH)} target="_blank" rel="noreferrer" title="Open on GitHub" className="inline-flex items-center gap-0.5 hover:underline">
+                <code>{CONFIG_PATH}</code> <ExternalLink className="size-3" />
+              </a>
+            ) : (
+              <code>{CONFIG_PATH}</code>
+            )}{' '}
+            in your repository{dirty && ' · unsaved'}
+          </p>
         </div>
         <Button onClick={save} disabled={!dirty || saving || blocking.length > 0}>
           {saving ? 'Saving…' : 'Save to repository'}
@@ -160,6 +205,18 @@ export function FieldsPage() {
         </div>
       )}
 
+      <section className="space-y-3 rounded-md border p-4">
+        <h2 className="text-sm font-medium">Collection</h2>
+        <CollectionFields
+          draft={details}
+          isNew={false}
+          contentDir={config.content_dir}
+          groups={groupOptions(config.collections)}
+          onChange={(patch) => setDetails((d) => (d ? { ...d, ...patch } : d))}
+        />
+      </section>
+
+      <h2 className="pt-2 text-sm font-medium">Parameters</h2>
       <ul className="space-y-2">
         {fields.map((f, i) => {
           const open = openIndex === i
@@ -199,15 +256,23 @@ export function FieldsPage() {
         })}
       </ul>
 
-      <Button
-        variant="outline"
-        onClick={() => {
-          setRows([...rows, { field: newField(fields) }])
-          setOpenIndex(rows.length)
-        }}
-      >
-        <Plus /> Add parameter
-      </Button>
+      <div className="flex flex-wrap gap-2">
+        <Button
+          variant="outline"
+          onClick={() => {
+            setRows([...rows, { field: newField(fields) }])
+            setOpenIndex(rows.length)
+          }}
+        >
+          <Plus /> Add parameter
+        </Button>
+        {missingCoreFields(fields).length > 0 && (
+          // Existing rows are kept by identity, so a renamed field still knows its original id.
+          <Button variant="outline" onClick={() => setRows(withCoreFields(fields).map((f) => rows.find((r) => r.field === f) ?? { field: f }))}>
+            <Plus /> Add defaults: {missingCoreFields(fields).map((f) => f.label).join(', ')}
+          </Button>
+        )}
+      </div>
     </div>
   )
 }

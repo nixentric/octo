@@ -1,7 +1,20 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { parseConfig } from './config.ts'
+import { groupCollections, parseConfig } from './config.ts'
 import { validateEntry } from './validate.ts'
+
+test('collections sit under their group heading, headings in first-seen order', () => {
+  const groups = groupCollections([
+    { name: 'pages' },
+    { name: 'categories', group: 'Taxonomy' },
+    { name: 'tools', group: '  ' },
+    { name: 'tags', group: 'taxonomy' },
+  ])
+  assert.deepEqual(
+    groups.map((g) => [g.name, g.collections.map((c) => c.name)]),
+    [['Content', ['pages', 'tools']], ['Taxonomy', ['categories', 'tags']]],
+  )
+})
 
 const wrap = (fields: unknown[]) => ({
   collections: [{ name: 'posts', label: 'Posts', folder: 'content/posts', fields }],

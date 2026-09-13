@@ -80,6 +80,26 @@ export const STARTER_FIELDS: Field[] = [
   { id: 'body', label: 'Content', type: 'markdown', required: false },
 ]
 
+/** Parameters every collection gets, whether or not its entries use them yet. */
+const CORE_FIELD_IDS = ['title', 'date', 'draft', 'body']
+
+export const missingCoreFields = (fields: Field[]) =>
+  STARTER_FIELDS.filter((f) => CORE_FIELD_IDS.includes(f.id) && !fields.some((x) => x.id === f.id))
+
+/** Adds the missing core fields around the existing ones: title first, date and draft before the body, body last. */
+export function withCoreFields(fields: Field[]): Field[] {
+  const missing = missingCoreFields(fields)
+  const add = (id: string) => missing.filter((f) => f.id === id)
+  return [
+    ...add('title'),
+    ...fields.filter((f) => f.id !== 'body'),
+    ...add('date'),
+    ...add('draft'),
+    ...fields.filter((f) => f.id === 'body'),
+    ...add('body'),
+  ]
+}
+
 export type DetectedSite = {
   adapter: CmsConfig['adapter']
   content_dir: string
